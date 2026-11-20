@@ -1,3 +1,5 @@
+![senda — Your workspace. Your way.](docs/assets/senda_concept.png)
+
 # Terminal Workspace
 
 A lightweight, local-first desktop workspace for Git projects, worktrees, and real terminal sessions. Product intent and scope are in [`docs/intent.md`](docs/intent.md); requirements and Milestone 0 acceptance criteria are in [`docs/spec.md`](docs/spec.md).

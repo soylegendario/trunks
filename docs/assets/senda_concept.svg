@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Concepto de identidad Senda: símbolo de dos caminos, logotipo y lema">
+  <rect width="1200" height="720" rx="44" fill="#F3F4F3"/>
+  <g transform="translate(456 126) scale(2.4)" fill="none" stroke="#222A26" stroke-width="10" stroke-linecap="round">
+    <path d="M61 96 C58 75 28 75 30 53 C32 35 60 41 60 16"/>
+    <path d="M61 96 C65 77 91 77 91 54" opacity="0.5"/>
+    <circle cx="60" cy="15" r="8" fill="#222A26" stroke="none"/>
+    <circle cx="91" cy="51" r="8" fill="#222A26" stroke="none" opacity="0.5"/>
+  </g>
+  <text x="600" y="501" text-anchor="middle" fill="#222A26" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-weight="500" font-size="86" letter-spacing="-2">senda</text>
+  <text x="600" y="567" text-anchor="middle" fill="#6B716E" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-weight="400" font-size="29">Your workspace. Your way.</text>
+</svg>
