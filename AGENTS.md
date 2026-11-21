@@ -61,6 +61,7 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
 
 ### Estado actual
 - **Hito:** Milestone 1 (M1 — Worktree-First Project Workflow & Git Integration).
+- **Rama de trabajo:** el código de la Tarea 1 vive en la rama `feat/m1-git-backend` y **no está en `main` hasta que se fusione**. Quien continúe con la Tarea 2 debe partir de esa rama (o de `main` si ya se fusionó). Al fusionarla, eliminar esta línea.
 - **Progreso:**
   - [x] **Milestone 0 Completado:** Scaffold Tauri 2 + Svelte 5, PTY nativo y fidelidad de terminal (`portable-pty` + xterm.js), persistencia SQLite transaccional (WAL mode) con reconciliación de rutas y recuperación en frío sin procesos fantasma (`docs/milestones/m0-results.md`, `docs/adr/0001-stack.md`).
   - [x] **M1 - Tarea 1 Completada:** Servicio nativo de Git en Rust (`src-tauri/src/git.rs`; 8 comandos Tauri registrados; 43 tests, incluidos de integración contra `git` real, que exigen `git` en el PATH). Notas y desviaciones en el plan activo.

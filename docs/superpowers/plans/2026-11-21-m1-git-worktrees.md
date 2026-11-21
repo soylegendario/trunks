@@ -121,6 +121,7 @@
 **Interfaces:**
 - Consumes: Tauri Git commands and SQLite project store.
 - Produces: Dynamic sidebar displaying real repositories, active worktrees, branches, and quick action buttons.
+- **Verify first (unverified):** the Rust commands take snake_case parameters (e.g. `repo_path`, `worktree_path`, `new_branch`). Tauri 2 normally expects camelCase keys from JavaScript (`repoPath`, `worktreePath`, `newBranch`), but this has never been exercised through the real IPC: Task 1 tests call the commands as plain Rust functions. Confirm the argument naming with one real `invoke` call in `src/lib/git.ts` before building UI on top of it. Returned structs keep snake_case fields (`is_dir`, `index_status`, ...); `GitStatusKind` serializes as `tracked` / `untracked` / `conflicted`.
 
 - [ ] Implement `src/lib/git.ts` wrapping Tauri IPC calls with TypeScript interfaces.
 - [ ] Replace static project fixture in `+page.svelte` with dynamic loading from SQLite + live Git discovery.
