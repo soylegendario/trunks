@@ -60,11 +60,12 @@ Ramas sin worktree: `release/1.0` (local y remota), `origin/remote-only` (solo r
 
 ## Casos extra
 
-22. OBSERVAR: con 2 proyectos, cerrar y reabrir → ¿la lista aparece un instante desde SQLite (sin HEAD) antes de refrescar con git?
+22. Con 2 proyectos, cerrar y reabrir → cada proyecto muestra "Querying git worktrees..." hasta que git responde, y nunca aparecen worktrees de la sesión anterior antes de esa respuesta (ya no hay caché). El proyecto y el worktree que estaban seleccionados se restauran.
 23. Stale: renombrar temporalmente `S/repo ñ con espacio` → refrescar → proyecto marcado stale con el error; devolver el nombre → refrescar → se limpia.
 24. Foco de ventana repetido (5–10 veces seguidas) → sin parpadeos ni errores en la consola de devtools.
 25. Consola de devtools abierta durante todo: apunta cualquier error o warning.
 26. Barra lateral: con varios repos, scroll de la lista, colapsar/expandir cada proyecto y comprobar que el estado se recuerda al reabrir.
+27. Con un worktree seleccionado, cerrar la app, quitarlo desde fuera (`git worktree remove`) y reabrir → al cargar se selecciona el primer worktree del proyecto, sin dejar una selección inválida.
 
 ## Preparado para la Tarea 4 (no es de esta pasada)
 

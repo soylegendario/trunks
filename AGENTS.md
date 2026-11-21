@@ -66,7 +66,7 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
   - [x] **Milestone 0 Completado:** Scaffold Tauri 2 + Svelte 5, PTY nativo y fidelidad de terminal (`portable-pty` + xterm.js), persistencia SQLite transaccional (WAL mode) con reconciliación de rutas y recuperación en frío sin procesos fantasma (`docs/milestones/m0-results.md`, `docs/adr/0001-stack.md`).
   - [x] **M1 - Tarea 1 Completada:** Servicio nativo de Git en Rust (`src-tauri/src/git.rs`; 8 comandos Tauri registrados; 43 tests, incluidos de integración contra `git` real, que exigen `git` en el PATH). Notas y desviaciones en el plan activo.
   - [x] **M1 - Tarea 2 Completada:** Integración de UI para registro de repositorios Git y gestión de worktrees en barra lateral izquierda (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, componentes modales y `WorktreeList.svelte`). Verificación manual **parcial** y deuda conocida: ver la sección "Task 2 review and manual pass" del plan activo.
-  - ⚠️ **Decisión pendiente antes de la Tarea 3:** el store persiste los worktrees en SQLite como caché y pinta la UI desde ella al arrancar, lo que tensiona con "Git como única fuente de verdad". Detalle y recomendación en el plan activo.
+  - ✅ **Decisión tomada (caché de worktrees):** SQLite guarda solo la referencia del proyecto (id, nombre, ruta) y la selección; los worktrees se leen siempre de Git, sin caché. La lógica está en `src/lib/project-logic.ts` y se prueba con `npm run test:unit`. La Tarea 3 debe enlazar pestañas con la ruta del worktree que informa Git.
   - [ ] **M1 - Tarea 3 (Siguiente):** Sincronización del ciclo de vida de pestañas de terminal asociadas a rutas reales de worktrees.
   - [ ] **M1 - Tarea 4:** Panel inspector lateral derecho (explorador de archivos, estado de Git y visor de diffs de solo lectura).
   - [ ] **M1 - Tarea 5:** Validación E2E de criterios `AC-M1-01` a `AC-M1-08` y consolidación de resultados en `docs/milestones/m1-results.md`.
@@ -82,6 +82,7 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
 | Instalar dependencias frontend | `npm install` |
 | Verificación de tipos y linting | `npm run check` |
 | Compilación del frontend | `npm run build` |
+| Tests unitarios de la lógica del frontend | `npm run test:unit` (runner integrado de Node, sin dependencias) |
 | Verificación rápida de Rust | `cargo check --manifest-path src-tauri/Cargo.toml` |
 | Compilación de Rust en debug | `cargo build --manifest-path src-tauri/Cargo.toml` |
 | Ejecución en modo desarrollo | `npm run tauri dev` |
