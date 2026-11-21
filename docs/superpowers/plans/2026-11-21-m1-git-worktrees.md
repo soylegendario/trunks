@@ -220,7 +220,7 @@
 - Produces: Validated criteria (`AC-M1-01` to `AC-M1-08`) and clean documentation handoff.
 
 - [x] Create a disposable test Git repository with multiple branches and worktrees to execute manual & automated checks. Done: `scripts/m1-sandbox/setup.sh` (idempotent; builds 8 worktrees in distinct states, a remote, a dirty worktree and `external.sh` for out-of-app changes); the step-by-step guide is `docs/milestones/m1-manual-pass.md`. The script is verified to build and re-run; no automated test uses it yet.
-- [ ] Validate `AC-M1-01` through `AC-M1-08` on macOS.
-- [ ] Run full build and checks: `npm run check`, `npm run build`, `cargo test`.
-- [ ] Record results in `docs/milestones/m1-results.md`.
-- [ ] Update `README.md` and `AGENTS.md` to reflect Milestone 1 completion.
+- [x] Validate `AC-M1-01` through `AC-M1-08` on macOS. Manual pass done by the user, all OK (2026-11-21).
+- [x] Run full build and checks: `npm run check`, `npm run build`, `npm run test:unit`, `cargo test` — all pass (16 unit, 43 Rust).
+- [x] Record results in `docs/milestones/m1-results.md`.
+- [x] Update `README.md` and `AGENTS.md` to reflect Milestone 1 completion.
