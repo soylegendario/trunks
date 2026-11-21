@@ -85,6 +85,7 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
 | Verificación rápida de Rust | `cargo check --manifest-path src-tauri/Cargo.toml` |
 | Compilación de Rust en debug | `cargo build --manifest-path src-tauri/Cargo.toml` |
 | Ejecución en modo desarrollo | `npm run tauri dev` |
+| Repo desechable para la pasada manual de M1 | `scripts/m1-sandbox/setup.sh` (guía: `docs/milestones/m1-manual-pass.md`) |
 
 ---
 
