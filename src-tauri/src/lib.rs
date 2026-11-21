@@ -1,4 +1,5 @@
 mod db;
+mod git;
 mod pty;
 
 use db::{
@@ -6,6 +7,10 @@ use db::{
     db_save_tabs, db_upsert_tab, get_default_db_path, DatabaseManager,
 };
 use pty::{get_system_info, pty_create, pty_kill, pty_list, pty_resize, pty_write, PtyManager};
+use git::{
+    git_create_worktree, git_get_diff, git_get_status, git_list_branches, git_list_files,
+    git_list_worktrees, git_remove_worktree, git_validate_repo,
+};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -34,6 +39,14 @@ pub fn run() {
             db_upsert_tab,
             db_delete_tab,
             db_check_path,
+            git_validate_repo,
+            git_list_worktrees,
+            git_list_branches,
+            git_create_worktree,
+            git_remove_worktree,
+            git_get_status,
+            git_get_diff,
+            git_list_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

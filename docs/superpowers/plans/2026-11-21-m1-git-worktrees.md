@@ -61,40 +61,51 @@
   - `GitStatusEntry { path: String, index_status: char, worktree_status: char, kind: GitStatusKind, original_path: Option<String> }`, with `GitStatusKind::{Tracked, Untracked, Conflicted}` serialized as `tracked`, `untracked`, or `conflicted`.
   - `GitFileInfo { name: String, path: String, is_dir: bool, is_symlink: bool }`
 
-- [ ] Add failing unit test `parses_worktree_porcelain_records` for the main worktree, a branch worktree, a detached worktree, a bare record, locked reason, prunable reason, and paths containing spaces/Unicode.
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_worktree_porcelain_records`; confirm it fails because the parser is not implemented.
-- [ ] Define the serialized result types above and implement pure `parse_worktree_list(&str) -> Result<Vec<GitWorktreeInfo>, String>` in `git.rs`; parse blank-line-delimited records and preserve optional fields.
-- [ ] Run the focused worktree parser test; confirm all fields and edge cases pass.
-- [ ] Add failing unit test `parses_status_porcelain_v2_z_entries` covering ordinary staged/unstaged entries, untracked entries, conflicts, a rename/copy with its second NUL-delimited path, and spaces/Unicode.
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_status_porcelain_v2_z_entries`; confirm it fails before implementing the parser.
-- [ ] Implement `parse_status_porcelain_v2_z(&[u8]) -> Result<GitStatusResult, String>` and preserve the raw index/worktree status characters, entry kind, new path, and optional original path.
-- [ ] Run the focused status parser test; confirm all fixture entries and both rename paths pass.
-- [ ] Add failing unit tests for worktree-relative path resolution: accept a contained relative directory, reject absolute paths and `..` traversal, and refuse to traverse a symlink.
-- [ ] Run the focused path guard tests; confirm rejection cases fail before implementation.
-- [ ] Implement shared async Git execution helpers using `tokio::process::Command`; pass args separately, set `GIT_TERMINAL_PROMPT=0`, capture stdout/stderr, add operation context to non-zero errors, and do not add timeouts.
-- [ ] Implement async `git_validate_repo(path: String) -> Result<GitRepoInfo, String>` using `git rev-parse --show-toplevel`; canonicalize and return the Git root even when `path` is nested inside it.
-- [ ] Implement async `git_list_worktrees(repo_path: String) -> Result<Vec<GitWorktreeInfo>, String>` using `git worktree list --porcelain` and the tested parser.
-- [ ] Add failing unit test `parses_branch_ref_records` for local, remote, current, and symbolic remote HEAD refs.
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_branch_ref_records`; confirm it fails because the parser is not implemented.
-- [ ] Implement pure `parse_branch_refs(&str) -> Result<Vec<GitBranchInfo>, String>` for records from `git for-each-ref --format=%(refname)%00%(objectname)%00%(HEAD)%00%(symref) refs/heads refs/remotes`; strip `refs/heads/` or `refs/remotes/`, set `is_remote`, set `is_current` from `%(HEAD)` for the registered repository root, and omit records with a non-empty `%(symref)`.
-- [ ] Implement async `git_list_branches(repo_path: String) -> Result<Vec<GitBranchInfo>, String>` by invoking the exact `for-each-ref` format above and applying the tested parser.
-- [ ] Run the focused branch parser test; confirm local/remote/current fields are parsed and symbolic remote HEAD aliases are omitted.
-- [ ] Implement async `git_create_worktree(repo_path: String, worktree_path: String, branch: String, new_branch: bool) -> Result<GitWorktreeInfo, String>`; use `git worktree add -b <branch> <path>` for new branches and `git worktree add <path> <branch>` for existing branches, then return the matching refreshed worktree record.
-- [ ] Add failing unit tests `rejects_main_and_unlisted_worktree_removal` and `removal_args_respect_force_confirmation`: reject the main worktree and paths not present in Git's worktree list; omit `--force` for false and include it for true.
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml removal_`; confirm both tests fail before the guard and argument helper exist.
-- [ ] Implement async `git_remove_worktree(repo_path: String, worktree_path: String, force: bool) -> Result<(), String>`; require a listed non-main worktree, omit `--force` when false, and append `--force` only when true. Leave dirty-tree refusal to Git.
-- [ ] Implement async `git_get_status(worktree_path: String) -> Result<GitStatusResult, String>` using `git status --porcelain=v2 -z`; if the installed Git rejects porcelain v2, return a clear upgrade error without a fallback parser.
-- [ ] Add failing unit tests for untracked diff generation; assert a UTF-8 text file produces a unified diff with all lines added, and a binary file returns a clear no-text-diff error.
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml untracked_diff`; confirm both cases fail before diff generation is implemented.
-- [ ] Implement async `git_get_diff(worktree_path: String, file_path: Option<String>, cached: bool) -> Result<String, String>` by invoking `git --literal-pathspecs diff --no-ext-diff --no-color [--cached] -- <relative-path>` (omit `--cached` when false and omit the path when `file_path` is `None`). For an untracked text file in the non-cached view, synthesize a unified new-file diff with all lines added; for a binary file, return a clear no-text-diff message.
-- [ ] Run the focused untracked diff tests; confirm all text lines are added and binary content is not decoded as text.
-- [ ] Add failing unit test `lists_one_level_and_marks_symlinks_without_following` for one-level results, hidden files, `.git` exclusion, and symlink entries; add a missing-directory error assertion.
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml lists_one_level`; confirm the file-list test fails before implementation.
-- [ ] Implement async `git_list_files(worktree_path: String, subpath: Option<String>) -> Result<Vec<GitFileInfo>, String>` using one-level `read_dir`; hide `.git`, include other hidden entries, list symlinks without following them, sort by name, and fail the whole request with context on missing/unreadable directories.
-- [ ] Run the focused file-list and path-guard tests; confirm directory results are shallow, sorted, and symlinks are never traversed.
-- [ ] Register all eight commands in `src-tauri/src/lib.rs` and confirm command names and signatures match the interfaces above.
-- [ ] Run focused Rust tests for all parser and path-guard cases; confirm they pass.
-- [ ] Run `cargo check --manifest-path src-tauri/Cargo.toml`; confirm the native backend compiles.
+- [x] Add failing unit test `parses_worktree_porcelain_records` for the main worktree, a branch worktree, a detached worktree, a bare record, locked reason, prunable reason, and paths containing spaces/Unicode.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_worktree_porcelain_records`; confirm it fails because the parser is not implemented.
+- [x] Define the serialized result types above and implement pure `parse_worktree_list(&str) -> Result<Vec<GitWorktreeInfo>, String>` in `git.rs`; parse blank-line-delimited records and preserve optional fields.
+- [x] Run the focused worktree parser test; confirm all fields and edge cases pass.
+- [x] Add failing unit test `parses_status_porcelain_v2_z_entries` covering ordinary staged/unstaged entries, untracked entries, conflicts, a rename/copy with its second NUL-delimited path, and spaces/Unicode.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_status_porcelain_v2_z_entries`; confirm it fails before implementing the parser.
+- [x] Implement `parse_status_porcelain_v2_z(&[u8]) -> Result<GitStatusResult, String>` and preserve the raw index/worktree status characters, entry kind, new path, and optional original path.
+- [x] Run the focused status parser test; confirm all fixture entries and both rename paths pass.
+- [x] Add failing unit tests for worktree-relative path resolution: accept a contained relative directory, reject absolute paths and `..` traversal, and refuse to traverse a symlink.
+- [x] Run the focused path guard tests; confirm rejection cases fail before implementation.
+- [x] Implement shared async Git execution helpers using `tokio::process::Command`; pass args separately, set `GIT_TERMINAL_PROMPT=0`, capture stdout/stderr, add operation context to non-zero errors, and do not add timeouts.
+- [x] Implement async `git_validate_repo(path: String) -> Result<GitRepoInfo, String>` using `git rev-parse --show-toplevel`; canonicalize and return the Git root even when `path` is nested inside it.
+- [x] Implement async `git_list_worktrees(repo_path: String) -> Result<Vec<GitWorktreeInfo>, String>` using `git worktree list --porcelain` and the tested parser.
+- [x] Add failing unit test `parses_branch_ref_records` for local, remote, current, and symbolic remote HEAD refs.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_branch_ref_records`; confirm it fails because the parser is not implemented.
+- [x] Implement pure `parse_branch_refs(&str) -> Result<Vec<GitBranchInfo>, String>` for records from `git for-each-ref --format=%(refname)%00%(objectname)%00%(HEAD)%00%(symref) refs/heads refs/remotes`; strip `refs/heads/` or `refs/remotes/`, set `is_remote`, set `is_current` from `%(HEAD)` for the registered repository root, and omit records with a non-empty `%(symref)`.
+- [x] Implement async `git_list_branches(repo_path: String) -> Result<Vec<GitBranchInfo>, String>` by invoking the exact `for-each-ref` format above and applying the tested parser.
+- [x] Run the focused branch parser test; confirm local/remote/current fields are parsed and symbolic remote HEAD aliases are omitted.
+- [x] Implement async `git_create_worktree(repo_path: String, worktree_path: String, branch: String, new_branch: bool) -> Result<GitWorktreeInfo, String>`; use `git worktree add -b <branch> <path>` for new branches and `git worktree add <path> <branch>` for existing branches, then return the matching refreshed worktree record.
+- [x] Add failing unit tests `rejects_main_and_unlisted_worktree_removal` and `removal_args_respect_force_confirmation`: reject the main worktree and paths not present in Git's worktree list; omit `--force` for false and include it for true.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml removal_`; confirm both tests fail before the guard and argument helper exist.
+- [x] Implement async `git_remove_worktree(repo_path: String, worktree_path: String, force: bool) -> Result<(), String>`; require a listed non-main worktree, omit `--force` when false, and append `--force` only when true. Leave dirty-tree refusal to Git.
+- [x] Implement async `git_get_status(worktree_path: String) -> Result<GitStatusResult, String>` using `git status --porcelain=v2 -z`; if the installed Git rejects porcelain v2, return a clear upgrade error without a fallback parser.
+- [x] Add failing unit tests for untracked diff generation; assert a UTF-8 text file produces a unified diff with all lines added, and a binary file returns a clear no-text-diff error.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml untracked_diff`; confirm both cases fail before diff generation is implemented.
+- [x] Implement async `git_get_diff(worktree_path: String, file_path: Option<String>, cached: bool) -> Result<String, String>` by invoking `git --literal-pathspecs diff --no-ext-diff --no-color [--cached] -- <relative-path>` (omit `--cached` when false and omit the path when `file_path` is `None`). For an untracked text file in the non-cached view, synthesize a unified new-file diff with all lines added; for a binary file, return a clear no-text-diff message.
+- [x] Run the focused untracked diff tests; confirm all text lines are added and binary content is not decoded as text.
+- [x] Add failing unit test `lists_one_level_and_marks_symlinks_without_following` for one-level results, hidden files, `.git` exclusion, and symlink entries; add a missing-directory error assertion.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml lists_one_level`; confirm the file-list test fails before implementation.
+- [x] Implement async `git_list_files(worktree_path: String, subpath: Option<String>) -> Result<Vec<GitFileInfo>, String>` using one-level `read_dir`; hide `.git`, include other hidden entries, list symlinks without following them, sort by name, and fail the whole request with context on missing/unreadable directories.
+- [x] Run the focused file-list and path-guard tests; confirm directory results are shallow, sorted, and symlinks are never traversed.
+- [x] Register all eight commands in `src-tauri/src/lib.rs` and confirm command names and signatures match the interfaces above.
+- [x] Run focused Rust tests for all parser and path-guard cases; confirm they pass.
+- [x] Run `cargo check --manifest-path src-tauri/Cargo.toml`; confirm the native backend compiles.
+
+**Task 1 implementation notes (completed 2026-11-21; 43 Rust tests pass, `cargo check` clean):**
+- Deviations from the plan text, all covered by tests:
+  - Added integration tests that drive the real `git` binary against temp repositories (validate, list, create, remove, status, diff, files). Git must be on `PATH` to run `cargo test`.
+  - `git_create_worktree` requires an absolute destination and rejects empty or `-`-prefixed branch names; `--` precedes the path.
+  - `git_remove_worktree` compares canonicalised paths (macOS `/var` vs `/private/var`) and removes using the path Git reports, not the caller's spelling.
+  - Status and diff run with `--no-optional-locks` so the inspector's polling does not contend for the index lock.
+  - `git_get_diff`: untracked files above 1 MiB or with a NUL in the first 8 KiB return `Err` ("too large" / "binary file"); synthetic headers always say mode `100644`.
+  - `git_list_files` sorts by name in byte order (not case-insensitive) and hides `.git` at any depth.
+  - Status omits ignored (`!`) records and headers (`#`).
+- Known gaps: the "upgrade Git" message for `--porcelain=v2` is only unit-tested against an assumed Git wording; symlink tests are `#[cfg(unix)]`; Windows `\\?\` canonical paths and worktrees with quoted (newline) paths are untested; untracked directories appear as a single `dir/` entry (Git default).
 
 ---
 

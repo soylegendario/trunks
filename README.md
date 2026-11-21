@@ -13,7 +13,8 @@ This repository is developed cooperatively across multiple AI agents (Junie, Cod
 - **Milestone 0 (Terminal & Workspace Spike):** **COMPLETED.** The core architecture (Tauri 2, Svelte 5, Rust, `@xterm/xterm`, `portable-pty`, and SQLite in WAL mode) has been empirically validated on macOS and accepted in [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md) with evaluation results recorded in [`docs/milestones/m0-results.md`](docs/milestones/m0-results.md).
 - **Milestone 1 (Worktree-First Project Workflow & Real Git Integration):** **ACTIVE.**
   - **Goal:** Register real local Git repositories, discover and manage worktrees via the system Git CLI, associate interactive PTY terminals with actual worktree directories, and inspect read-only file status and diffs.
-  - **Next Objective:** Task 1 — Implement the approved native Git backend design in Rust (`src-tauri/src/git.rs`); see [`M1 Git Backend Design`](docs/superpowers/specs/2026-11-21-m1-git-backend-design.md) and the [active plan](docs/superpowers/plans/2026-11-21-m1-git-worktrees.md).
+  - **Done:** Task 1 — native Git backend in Rust (`src-tauri/src/git.rs`, eight Tauri commands registered, 43 tests passing); see [`M1 Git Backend Design`](docs/superpowers/specs/2026-11-21-m1-git-backend-design.md) and the implementation notes in the [active plan](docs/superpowers/plans/2026-11-21-m1-git-worktrees.md).
+  - **Next Objective:** Task 2 — project registration and worktree management UI (`src/lib/git.ts`, sidebar, add/remove project and worktree modals).
 
 Start with:
 
