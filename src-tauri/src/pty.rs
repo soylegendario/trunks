@@ -92,6 +92,10 @@ pub fn pty_create(
     let shell = get_default_shell_path();
     let mut cmd = CommandBuilder::new(&shell);
 
+    // Start as a login shell so ~/.zprofile etc. restore PATH (npm, brew...)
+    #[cfg(not(target_os = "windows"))]
+    cmd.arg("-l");
+
     // Common terminal environment variables
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");

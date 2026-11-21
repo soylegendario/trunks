@@ -193,7 +193,7 @@
     cursor: pointer;
   }
   .item:hover { background: rgba(255, 255, 255, 0.05); }
-  .item.active { background: rgba(56, 139, 253, 0.18); }
+  .item.active { background: rgba(148, 72, 248, 0.18); }
   .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .badge {
     width: 14px;

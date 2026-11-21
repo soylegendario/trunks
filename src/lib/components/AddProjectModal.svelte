@@ -194,7 +194,7 @@
   }
 
   .form-group input:focus {
-    border-color: #89b4fa;
+    border-color: #9448f8;
   }
 
   .error-banner {
@@ -239,12 +239,12 @@
   }
 
   .btn.primary {
-    background: #89b4fa;
-    color: #11111b;
+    background: #9448f8;
+    color: #ffffff;
   }
 
   .btn.primary:hover:not(:disabled) {
-    background: #b4befe;
+    background: #aa6dfb;
   }
 
   .btn:disabled {

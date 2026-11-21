@@ -157,8 +157,8 @@
   }
 
   .info-box {
-    background: rgba(137, 180, 250, 0.1);
-    border: 1px solid rgba(137, 180, 250, 0.3);
+    background: rgba(148, 72, 248, 0.1);
+    border: 1px solid rgba(148, 72, 248, 0.3);
     border-radius: 6px;
     padding: 10px 12px;
     display: flex;
@@ -188,7 +188,7 @@
     border: 1px solid #313244;
     padding: 6px 8px;
     border-radius: 4px;
-    color: #89b4fa;
+    color: #9448f8;
     font-family: monospace;
     font-size: 11px;
     word-break: break-all;

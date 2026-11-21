@@ -96,6 +96,6 @@
   .row:hover { background: rgba(255, 255, 255, 0.05); }
   .chev { width: 10px; color: #8b949e; font-size: 10px; }
   .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dir { color: #79c0ff; }
+  .dir { color: #9448f8; }
   .err { color: #ffa198; font-size: 11px; padding: 6px 10px; }
 </style>

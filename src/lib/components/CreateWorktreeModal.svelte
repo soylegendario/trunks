@@ -382,7 +382,7 @@
 
   .mode-btn.active {
     background: #313244;
-    color: #89b4fa;
+    color: #9448f8;
     font-weight: 600;
   }
 
@@ -421,7 +421,7 @@
 
   .form-group input:focus,
   .form-group select:focus {
-    border-color: #89b4fa;
+    border-color: #9448f8;
   }
 
   .loading-hint,
@@ -437,7 +437,7 @@
   }
 
   .path-preview code {
-    color: #89b4fa;
+    color: #9448f8;
     background: #11111b;
     padding: 2px 5px;
     border-radius: 3px;
@@ -495,12 +495,12 @@
   }
 
   .btn.primary {
-    background: #89b4fa;
-    color: #11111b;
+    background: #9448f8;
+    color: #ffffff;
   }
 
   .btn.primary:hover:not(:disabled) {
-    background: #b4befe;
+    background: #aa6dfb;
   }
 
   .btn:disabled {

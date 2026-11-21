@@ -85,7 +85,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: #0d1117;
+    background: #11111b;
     user-select: text;
   }
   .title {

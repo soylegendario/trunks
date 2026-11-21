@@ -52,7 +52,6 @@
 
   let showLeft = $state(true);
   let showRight = $state(true);
-  let centerWidth = $state(0);
   const MIN_SIDE = 200;
   const MAX_SIDE = 700;
   function loadWidth(key: string, fallback: number) {
@@ -89,7 +88,6 @@
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   }
-  let centerHeight = $state(0);
   let centerElement = $state<HTMLElement | null>(null);
 
   let systemInfo = $state<SystemInfo | null>(null);
@@ -401,14 +399,10 @@
 
     // Setup ResizeObserver for center terminal area
     if (centerElement) {
-      resizeObserver = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          centerWidth = Math.round(entry.contentRect.width);
-          centerHeight = Math.round(entry.contentRect.height);
-          if (activeTabId) {
-            const currentSession = sessions.get(activeTabId);
-            currentSession?.fit();
-          }
+      resizeObserver = new ResizeObserver(() => {
+        if (activeTabId) {
+          const currentSession = sessions.get(activeTabId);
+          currentSession?.fit();
         }
       });
       resizeObserver.observe(centerElement);
@@ -593,9 +587,6 @@
             +
           </button>
         </div>
-        <div class="center-metrics">
-          <span>{centerWidth} × {centerHeight} px</span>
-        </div>
       </div>
 
       <div class="panel-content center-content">
@@ -647,6 +638,7 @@
     color: #cdd6f4;
     overflow: hidden;
     user-select: none;
+    color-scheme: dark;
   }
 
   :global(*), :global(*::before), :global(*::after) {
@@ -731,7 +723,7 @@
 
   .resizer:hover,
   :global(body.resizing) .resizer {
-    background: rgba(137, 180, 250, 0.4);
+    background: rgba(148, 72, 248, 0.4);
   }
 
   :global(body.resizing) {
@@ -810,8 +802,8 @@
 
   .tab.active {
     background-color: #11111b;
-    color: #89b4fa;
-    border-top: 2px solid #89b4fa;
+    color: #9448f8;
+    border-top: 2px solid #9448f8;
     font-weight: 500;
   }
 
@@ -869,8 +861,8 @@
   }
 
   .tab-start-btn, .tab-restart-btn {
-    background: #89b4fa;
-    color: #11111b;
+    background: #9448f8;
+    color: #ffffff;
     border: none;
     padding: 1px 5px;
     border-radius: 3px;
@@ -885,7 +877,7 @@
   }
 
   .tab-start-btn:hover {
-    background: #b4befe;
+    background: #aa6dfb;
   }
 
   .tab-restart-btn:hover {
@@ -927,14 +919,7 @@
 
   .new-tab-btn:hover {
     background-color: #181825;
-    color: #89b4fa;
-  }
-
-  .center-metrics {
-    padding: 0 12px;
-    font-family: monospace;
-    font-size: 11px;
-    color: #6c7086;
+    color: #9448f8;
   }
 
   .panel-content {
@@ -945,6 +930,7 @@
 
   .center-content {
     background-color: #11111b;
+    overflow: hidden;
   }
 
   .file-overlay {
@@ -955,7 +941,7 @@
 
   .file-ico {
     font-size: 11px;
-    color: #89b4fa;
+    color: #9448f8;
   }
 
   .empty-state {
@@ -981,19 +967,19 @@
   }
 
   .action-btn.primary {
-    background: #89b4fa;
-    color: #11111b;
-    border-color: #89b4fa;
+    background: #9448f8;
+    color: #ffffff;
+    border-color: #9448f8;
     font-weight: 600;
   }
 
   .action-btn:hover {
     background: #45475a;
-    color: #89b4fa;
+    color: #9448f8;
   }
 
   .action-btn.primary:hover {
-    background: #b4befe;
-    border-color: #b4befe;
+    background: #aa6dfb;
+    border-color: #aa6dfb;
   }
 </style>

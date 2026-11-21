@@ -40,12 +40,14 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background-color: #1a1b26;
+    background-color: #11111b;
+    scrollbar-width: none;
   }
 
   .terminal-container {
     width: 100%;
     height: 100%;
+    scrollbar-width: none;
   }
 
   :global(.terminal-container .xterm) {
@@ -54,6 +56,16 @@
   }
 
   :global(.terminal-container .xterm-viewport) {
-    background-color: #1a1b26 !important;
+    background-color: #11111b !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  :global(.terminal-container .xterm-viewport::-webkit-scrollbar),
+  :global(.terminal-container ::-webkit-scrollbar),
+  :global(.terminal-wrapper ::-webkit-scrollbar) {
+    display: none;
+    width: 0;
+    height: 0;
   }
 </style>

@@ -27,7 +27,7 @@
     font-size: 11px;
     line-height: 1.45;
     overflow: auto;
-    background: #0d1117;
+    background: #11111b;
     color: #c9d1d9;
     height: 100%;
   }
@@ -39,6 +39,6 @@
   }
   .add { background: rgba(63, 185, 80, 0.15); color: #7ee787; }
   .del { background: rgba(248, 81, 73, 0.15); color: #ffa198; }
-  .hunk { background: rgba(56, 139, 253, 0.12); color: #79c0ff; }
+  .hunk { background: rgba(148, 72, 248, 0.15); color: #9448f8; }
   .meta { color: #8b949e; }
 </style>

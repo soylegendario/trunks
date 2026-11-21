@@ -246,13 +246,13 @@
   .detail-row .val.path {
     font-family: monospace;
     font-size: 11px;
-    color: #89b4fa;
+    color: #9448f8;
     word-break: break-all;
   }
 
   .warning-banner {
-    background: rgba(137, 180, 250, 0.1);
-    border: 1px solid #89b4fa;
+    background: rgba(148, 72, 248, 0.1);
+    border: 1px solid #9448f8;
     border-radius: 6px;
     padding: 12px;
     display: flex;

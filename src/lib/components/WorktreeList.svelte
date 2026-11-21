@@ -372,7 +372,7 @@
 
   .icon-btn:hover {
     background: #45475a;
-    color: #89b4fa;
+    color: #9448f8;
   }
 
   .icon-btn.spinning {
@@ -389,8 +389,8 @@
   }
 
   .action-btn-sm {
-    background: #89b4fa;
-    color: #11111b;
+    background: #9448f8;
+    color: #ffffff;
     border: none;
     padding: 4px 8px;
     border-radius: 4px;
@@ -401,7 +401,7 @@
   }
 
   .action-btn-sm:hover {
-    background: #b4befe;
+    background: #aa6dfb;
   }
 
   .sidebar-content {
@@ -441,7 +441,7 @@
     margin-top: 8px;
     background: #313244;
     border: 1px solid #45475a;
-    color: #89b4fa;
+    color: #9448f8;
     padding: 6px 12px;
     border-radius: 5px;
     font-size: 12px;
@@ -452,7 +452,7 @@
 
   .add-repo-btn:hover {
     background: #45475a;
-    border-color: #89b4fa;
+    border-color: #9448f8;
   }
 
   .project-card {
@@ -500,7 +500,7 @@
   }
 
   .project-info:hover .project-name {
-    color: #89b4fa;
+    color: #9448f8;
   }
 
   .chevron {
@@ -557,7 +557,7 @@
 
   .icon-btn-sm:hover {
     background: #313244;
-    color: #89b4fa;
+    color: #9448f8;
   }
 
   .icon-btn-sm.danger:hover {
@@ -602,8 +602,8 @@
   }
 
   .worktree-item.selected {
-    border-color: #89b4fa;
-    background: #181926;
+    border-color: #9448f8;
+    background: rgba(148, 72, 248, 0.12);
   }
 
   .worktree-item.stale {
@@ -627,7 +627,7 @@
   }
 
   .branch-icon {
-    color: #89b4fa;
+    color: #9448f8;
     font-size: 12px;
   }
 
@@ -723,15 +723,15 @@
 
   .wt-btn.terminal-btn {
     background: #313244;
-    color: #89b4fa;
+    color: #9448f8;
     padding: 3px 6px;
     font-family: monospace;
     font-weight: 700;
   }
 
   .wt-btn.terminal-btn:hover {
-    background: #89b4fa;
-    color: #11111b;
+    background: #9448f8;
+    color: #ffffff;
   }
 
   .wt-btn.terminal-btn:disabled {
