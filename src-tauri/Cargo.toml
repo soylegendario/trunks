@@ -1,12 +1,12 @@
 [package]
-name = "senda"
+name = "trunks"
 version = "0.1.0"
-description = "Senda Terminal Workspace"
-authors = ["Senda Contributors"]
+description = "Trunks Terminal Workspace"
+authors = ["Trunks Contributors"]
 edition = "2021"
 
 [lib]
-name = "senda_lib"
+name = "trunks_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

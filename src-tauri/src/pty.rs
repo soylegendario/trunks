@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_pty_cwd_with_spaces_and_unicode() {
-        let temp_dir = std::env::temp_dir().join("senda_spike_test_espacio y acento ñ");
+        let temp_dir = std::env::temp_dir().join("trunks_spike_test_espacio y acento ñ");
         let _ = fs::create_dir_all(&temp_dir);
 
         let pty_system = native_pty_system();
@@ -342,7 +342,7 @@ mod tests {
             if let Ok(n) = reader.read(&mut buf) {
                 if n > 0 {
                     output.push_str(&String::from_utf8_lossy(&buf[..n]));
-                    if output.contains("senda_spike_test_espacio y acento ñ") {
+                    if output.contains("trunks_spike_test_espacio y acento ñ") {
                         break;
                     }
                 }
@@ -353,7 +353,7 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
 
         assert!(
-            output.contains("senda_spike_test_espacio y acento ñ"),
+            output.contains("trunks_spike_test_espacio y acento ñ"),
             "Expected output to contain unicode cwd, got: {}",
             output
         );

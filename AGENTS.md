@@ -1,6 +1,6 @@
 # AGENTS.md — Protocolo de Colaboración Multi-Agente
 
-Este repositorio (**Senda / Terminal Workspace**) se desarrolla de forma colaborativa y asíncrona mediante múltiples agentes de Inteligencia Artificial (Junie, Codex, Claude, etc.) y desarrolladores humanos.
+Este repositorio (**Trunks / Terminal Workspace**) se desarrolla de forma colaborativa y asíncrona mediante múltiples agentes de Inteligencia Artificial (Junie, Codex, Claude, etc.) y desarrolladores humanos.
 
 El objetivo de este documento es maximizar la eficiencia colectiva, evitar la duplicación de trabajo, preservar el contexto entre sesiones y garantizar una transición fluida e inmediata para cualquier agente que tome el control del proyecto.
 
@@ -44,8 +44,8 @@ Para que el siguiente agente pueda continuar sin pérdida de contexto ni ambigü
 
 Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/intent.md) y [`docs/spec.md`](docs/spec.md):
 
-- **No convertir el proyecto en un IDE**: No añadir LSP, depuradores ni edición de archivos dentro del alcance inicial. Senda es un espacio de trabajo para terminales y navegación/inspección ligera.
-- **Sin integración/orquestación de IA propietaria**: Senda corre en local y no gestiona prompts, APIs de proveedores ni orquesta sesiones de agentes de forma interna. Los agentes CLI se ejecutan como cualquier otro comando de terminal dentro del PTY.
+- **No convertir el proyecto en un IDE**: No añadir LSP, depuradores ni edición de archivos dentro del alcance inicial. Trunks es un espacio de trabajo para terminales y navegación/inspección ligera.
+- **Sin integración/orquestación de IA propietaria**: Trunks corre en local y no gestiona prompts, APIs de proveedores ni orquesta sesiones de agentes de forma interna. Los agentes CLI se ejecutan como cualquier otro comando de terminal dentro del PTY.
 - **Git como única fuente de verdad**: No crear bases de datos secundarias para el estado de Git. La aplicación consulta y reconcilia con el CLI de Git del sistema.
 - **Identidad de Pestaña vs. Proceso PTY**:
   - *Terminal tab*: Identidad duradera en la UI vinculada a proyecto/worktree/directorio recordado.

@@ -44,36 +44,36 @@
   // Example Project & Worktrees state synced with SQLite
   let projects = $state<ProjectItem[]>([
     {
-      id: "proj-senda-spike",
-      name: "Senda Workspace (M0 Spike)",
-      path: "/tmp/senda-spike",
+      id: "proj-trunks-spike",
+      name: "Trunks Workspace (M0 Spike)",
+      path: "/tmp/trunks-spike",
       is_stale: false,
       stale_reason: null,
       worktrees: [
         {
           id: "wt-main",
-          project_id: "proj-senda-spike",
+          project_id: "proj-trunks-spike",
           name: "main",
           branch: "main",
-          path: "/tmp/senda-spike/wt-main",
+          path: "/tmp/trunks-spike/wt-main",
           is_stale: false,
           stale_reason: null,
         },
         {
           id: "wt-feat",
-          project_id: "proj-senda-spike",
+          project_id: "proj-trunks-spike",
           name: "feature-recovery",
           branch: "feat/sqlite-recovery",
-          path: "/tmp/senda-spike/wt-feat",
+          path: "/tmp/trunks-spike/wt-feat",
           is_stale: false,
           stale_reason: null,
         },
         {
           id: "wt-unicode",
-          project_id: "proj-senda-spike",
+          project_id: "proj-trunks-spike",
           name: "unicode-path",
           branch: "feat/unicode-ñ",
-          path: "/tmp/senda-spike/wt-espacio y acento ñ",
+          path: "/tmp/trunks-spike/wt-espacio y acento ñ",
           is_stale: false,
           stale_reason: null,
         },
@@ -143,7 +143,7 @@
       id,
       title: tabTitle,
       cwd: tabCwd,
-      projectName: "Senda Workspace",
+      projectName: "Trunks Workspace",
       worktreeName: worktreeName || "default",
       status: "running",
       isRestored: false,
@@ -304,12 +304,12 @@
   function addStaleWorktreeFixture() {
     const staleWt: WorktreeItem = {
       id: "wt-stale-" + Date.now(),
-      project_id: projects[0]?.id || "proj-senda-spike",
+      project_id: projects[0]?.id || "proj-trunks-spike",
       name: "deleted-external-wt",
       branch: "feat/orphaned-branch",
       path: "/tmp/non_existent_deleted_worktree_" + Date.now(),
       is_stale: true,
-      stale_reason: "Worktree directory was moved or removed outside Senda",
+      stale_reason: "Worktree directory was moved or removed outside Trunks",
     };
 
     if (projects.length > 0) {
@@ -430,7 +430,7 @@
       <button class="toggle-btn" class:active={showLeft} onclick={toggleLeft} title="Toggle Projects Sidebar">
         {showLeft ? "◀ Sidebar" : "▶ Sidebar"}
       </button>
-      <span class="app-title">Senda</span>
+      <span class="app-title">Trunks</span>
       <span class="badge">Milestone 0 Spike</span>
       <span class="db-badge" title="SQLite Transactional Store">SQLite: WAL</span>
     </div>
@@ -500,7 +500,7 @@
             </button>
             <button
               class="action-btn"
-              onclick={() => createTab("/tmp/senda-spike/wt-espacio y acento ñ", "wt:unicode", "unicode-ñ")}
+              onclick={() => createTab("/tmp/trunks-spike/wt-espacio y acento ñ", "wt:unicode", "unicode-ñ")}
             >
               + Launch with spaces &amp; ñ
             </button>
@@ -670,8 +670,8 @@
               <button
                 class="test-helper-btn"
                 onclick={async () => {
-                  await createTab("/tmp/senda-spike/wt-main", "Tab A (wt-main)", "wt-main");
-                  await createTab("/tmp/senda-spike/wt-feat", "Tab B (wt-feat)", "wt-feat");
+                  await createTab("/tmp/trunks-spike/wt-main", "Tab A (wt-main)", "wt-main");
+                  await createTab("/tmp/trunks-spike/wt-feat", "Tab B (wt-feat)", "wt-feat");
                 }}
               >
                 Spawn 2 Sessions

@@ -496,7 +496,7 @@ pub fn get_default_db_path(app: &AppHandle) -> PathBuf {
     let app_data = app
         .path()
         .app_data_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("senda"));
+        .unwrap_or_else(|_| std::env::temp_dir().join("trunks"));
     app_data.join("workspace.db")
 }
 
@@ -578,7 +578,7 @@ mod tests {
             show_left: false,
             show_right: true,
             active_tab_id: Some("tab-test-123".to_string()),
-            selected_project_name: Some("senda".to_string()),
+            selected_project_name: Some("trunks".to_string()),
             selected_worktree_name: Some("feature/recovery".to_string()),
         };
 
@@ -589,7 +589,7 @@ mod tests {
         assert_eq!(state.layout.show_left, false);
         assert_eq!(state.layout.show_right, true);
         assert_eq!(state.layout.active_tab_id.as_deref(), Some("tab-test-123"));
-        assert_eq!(state.layout.selected_project_name.as_deref(), Some("senda"));
+        assert_eq!(state.layout.selected_project_name.as_deref(), Some("trunks"));
         assert_eq!(state.layout.selected_worktree_name.as_deref(), Some("feature/recovery"));
     }
 
@@ -597,7 +597,7 @@ mod tests {
     fn test_projects_and_worktree_persistence_and_stale_reconciliation() {
         let db = DatabaseManager::new_in_memory().expect("Failed to create in-memory db");
 
-        let temp_dir = std::env::temp_dir().join("senda_test_wt_existing");
+        let temp_dir = std::env::temp_dir().join("trunks_test_wt_existing");
         let _ = std::fs::create_dir_all(&temp_dir);
 
         let projects = vec![ProjectItem {
@@ -621,7 +621,7 @@ mod tests {
                     project_id: "proj-1".to_string(),
                     name: "deleted-branch".to_string(),
                     branch: Some("feat/deleted".to_string()),
-                    path: "/non_existent/path/for/senda_test".to_string(),
+                    path: "/non_existent/path/for/trunks_test".to_string(),
                     is_stale: false,
                     stale_reason: None,
                 },
@@ -660,7 +660,7 @@ mod tests {
             id: "tab-1".to_string(),
             title: "Terminal 1".to_string(),
             cwd: temp_dir.to_string_lossy().to_string(),
-            project_name: Some("senda".to_string()),
+            project_name: Some("trunks".to_string()),
             worktree_name: Some("main".to_string()),
             tab_order: 0,
             is_stale: false,
@@ -671,7 +671,7 @@ mod tests {
             id: "tab-2".to_string(),
             title: "Terminal 2".to_string(),
             cwd: "/non_existent/stale/tab_dir".to_string(),
-            project_name: Some("senda".to_string()),
+            project_name: Some("trunks".to_string()),
             worktree_name: Some("feat/stale".to_string()),
             tab_order: 1,
             is_stale: false,

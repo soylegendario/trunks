@@ -1,4 +1,4 @@
-![senda — Your workspace. Your way.](docs/assets/senda_concept.png)
+![Trunks — Your workspace. Your flow.](docs/assets/trunks_concept.png)
 
 # Terminal Workspace
 
