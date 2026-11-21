@@ -6,23 +6,16 @@ import {
   type GitWorktreeInfo,
   type GitRepoInfo,
 } from "./git";
+import { getWorkspaceState, saveProjects } from "./storage";
 import {
-  getWorkspaceState,
-  saveProjects,
-  type ProjectItem,
-  type WorktreeItem,
-} from "./storage";
+  hydrateProjects,
+  toPersistedProjects,
+  resolveSelectedWorktree,
+  restoreSelection,
+  type ProjectState,
+} from "./project-logic";
 
-export interface ProjectState {
-  id: string;
-  name: string;
-  path: string;
-  is_stale: boolean;
-  stale_reason: string | null;
-  worktrees: GitWorktreeInfo[];
-  isLoading: boolean;
-  error: string | null;
-}
+export type { ProjectState };
 
 class ProjectStore {
   public projects = $state<ProjectState[]>([]);
@@ -32,31 +25,24 @@ class ProjectStore {
   public selectedWorktreePath = $state<string | null>(null);
 
   /**
-   * Initializes store by loading cached projects from SQLite,
-   * then reconciles with real Git worktree state for each project.
+   * Initializes the store: loads the registered projects (name and path) and the saved
+   * selection from SQLite, then asks Git for each project's worktrees. Worktrees are never
+   * persisted or painted from a cache; they stay empty and loading until Git answers.
    */
   public async init() {
     try {
       const workspace = await getWorkspaceState();
-      if (workspace.projects && workspace.projects.length > 0) {
-        this.projects = workspace.projects.map((p) => ({
-          id: p.id,
-          name: p.name,
-          path: p.path,
-          is_stale: Boolean(p.is_stale),
-          stale_reason: p.stale_reason || null,
-          worktrees: p.worktrees.map((wt) => ({
-            path: wt.path,
-            head: null,
-            branch: wt.branch,
-            bare: false,
-            locked: null,
-            prunable: wt.is_stale ? wt.stale_reason || "Directory missing" : null,
-          })),
-          isLoading: false,
-          error: null,
-        }));
-      }
+      this.projects = hydrateProjects(workspace.projects ?? []);
+
+      // The layout columns keep their legacy names: `selected_project_name` holds the project
+      // id and `selected_worktree_name` the worktree path (see LayoutState in storage.ts).
+      const restored = restoreSelection(
+        workspace.layout?.selected_project_name ?? null,
+        workspace.layout?.selected_worktree_name ?? null,
+        this.projects
+      );
+      this.selectedProjectId = restored.projectId;
+      this.selectedWorktreePath = restored.worktreePath;
 
       this.isInitialized = true;
       // Immediately reconcile with real Git CLI in background
@@ -97,10 +83,10 @@ class ProjectStore {
 
     this.projects = [...this.projects, newProject];
     this.selectedProjectId = id;
+    await this.persist(); // the registration must survive even if the refresh below fails
 
-    // Fetch worktrees
+    // Fetch worktrees (queried live from Git; nothing about them is persisted)
     await this.refreshProject(id);
-    await this.persist();
     return newProject;
   }
 
@@ -132,9 +118,9 @@ class ProjectStore {
       project.is_stale = false;
       project.stale_reason = null;
 
-      // Select first worktree if none selected
-      if (this.selectedProjectId === id && !this.selectedWorktreePath && worktrees.length > 0) {
-        this.selectedWorktreePath = worktrees[0].path;
+      // Keep the selection only while Git still lists it; otherwise fall back to the first.
+      if (this.selectedProjectId === id) {
+        this.selectedWorktreePath = resolveSelectedWorktree(this.selectedWorktreePath, worktrees);
       }
     } catch (err: any) {
       console.warn(`Failed to list worktrees for ${project.name} (${project.path}):`, err);
@@ -143,7 +129,6 @@ class ProjectStore {
       project.error = String(err);
     } finally {
       project.isLoading = false;
-      await this.persist();
     }
   }
 
@@ -177,6 +162,7 @@ class ProjectStore {
 
     const wt = await gitCreateWorktree(project.path, worktreePath, branch, newBranch);
     await this.refreshProject(projectId);
+    this.selectedProjectId = projectId; // select the project too, or the next refresh would undo it
     this.selectedWorktreePath = wt.path;
     return wt;
   }
@@ -203,28 +189,12 @@ class ProjectStore {
   }
 
   /**
-   * Persists current projects and worktrees to SQLite store.
+   * Persists the registered projects (id, name, path) to SQLite. Called only when a project is
+   * added or removed, never on refresh, and never with worktree or Git state.
    */
   private async persist(): Promise<void> {
     try {
-      const items: ProjectItem[] = this.projects.map((p) => ({
-        id: p.id,
-        name: p.name,
-        path: p.path,
-        is_stale: p.is_stale,
-        stale_reason: p.stale_reason,
-        worktrees: p.worktrees.map((wt, idx) => ({
-          id: `${p.id}-wt-${idx}`,
-          project_id: p.id,
-          name: wt.branch || wt.path.split(/[/\\]/).pop() || `wt-${idx}`,
-          branch: wt.branch,
-          path: wt.path,
-          is_stale: Boolean(wt.prunable),
-          stale_reason: wt.prunable,
-        })),
-      }));
-
-      await saveProjects(items);
+      await saveProjects(toPersistedProjects(this.projects));
     } catch (err) {
       console.error("Failed to persist projects to SQLite:", err);
     }

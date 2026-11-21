@@ -34,6 +34,8 @@ export interface LayoutState {
   show_left: boolean;
   show_right: boolean;
   active_tab_id: string | null;
+  // Legacy column names, kept to avoid a schema migration: `selected_project_name` holds the
+  // selected project's id and `selected_worktree_name` the selected worktree's path.
   selected_project_name: string | null;
   selected_worktree_name: string | null;
 }
