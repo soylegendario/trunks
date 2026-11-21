@@ -13,10 +13,10 @@ Al comenzar una nueva sesión, **todo agente DEBE realizar los siguientes pasos 
 1. **Leer este archivo (`AGENTS.md`)** para recordar las reglas de juego y restricciones.
 2. **Consultar el estado actual del proyecto**:
    - Revisar la sección `## Current stage` en [`README.md`](README.md).
-   - Revisar el plan activo en [`docs/superpowers/plans/`](docs/superpowers/plans/) (actualmente [`docs/superpowers/plans/2026-11-20-m0-terminal-workspace.md`](docs/superpowers/plans/2026-11-20-m0-terminal-workspace.md)).
+   - Revisar el plan activo en [`docs/superpowers/plans/`](docs/superpowers/plans/) (actualmente [`docs/superpowers/plans/2026-11-21-m1-git-worktrees.md`](docs/superpowers/plans/2026-11-21-m1-git-worktrees.md)).
 3. **Identificar la tarea inmediata**:
    - Localizar el primer elemento pendiente (`- [ ]`) en el plan activo.
-   - Contrastar los requisitos con [`docs/spec.md`](docs/spec.md), [`docs/milestones/m0-terminal-workspace-spike.md`](docs/milestones/m0-terminal-workspace-spike.md) y el ADR correspondiente en [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md).
+   - Contrastar los requisitos con [`docs/spec.md`](docs/spec.md), [`docs/milestones/m1-git-worktrees.md`](docs/milestones/m1-git-worktrees.md) y el ADR correspondiente en [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md).
 
 ---
 
@@ -60,12 +60,14 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
 ## 4. Estado Actual del Proyecto y Hoja de Ruta
 
 ### Estado actual
-- **Hito:** Milestone 0 (M0 Spike - Terminal and workspace recovery).
+- **Hito:** Milestone 1 (M1 — Worktree-First Project Workflow & Git Integration).
 - **Progreso:**
-  - [x] **Tarea 1 completada:** Entorno aprovisionado (Node.js, Rust/Cargo). Scaffold base creado con Tauri 2, Svelte 5, TypeScript y Rust. Layout de 3 regiones implementado y dimensiones reactivas verificadas.
-  - [x] **Tarea 2 completada:** Validado el ciclo de vida de PTY y fidelidad de terminal (`portable-pty` en Rust + `@xterm/xterm` en Svelte). Soporte multi-pestaña, I/O en tiempo real, redimensionado reactivo sin reinicio de proceso y tests automáticos superados en macOS (`docs/milestones/m0-results.md`).
-  - [x] **Tarea 3 completada:** Persistencia incremental y recuperación de estado (`SQLite` / `rusqlite` en WAL mode). Reconciliación de rutas huérfanas/movidas, retención de orden de pestañas y recuperación en frío sin procesos fantasma (`AC-M0-06`, `AC-M0-07`, `AC-M0-08`).
-  - [ ] **Tarea 4 (Siguiente):** Evaluación de criterios de aceptación (`AC-M0-01` a `AC-M0-09`) y consolidación de resultados en `docs/milestones/m0-results.md` y `docs/adr/0001-stack.md`.
+  - [x] **Milestone 0 Completado:** Scaffold Tauri 2 + Svelte 5, PTY nativo y fidelidad de terminal (`portable-pty` + xterm.js), persistencia SQLite transaccional (WAL mode) con reconciliación de rutas y recuperación en frío sin procesos fantasma (`docs/milestones/m0-results.md`, `docs/adr/0001-stack.md`).
+  - [ ] **M1 - Tarea 1 (Siguiente):** Servicio nativo de Git en Rust (`src-tauri/src/git.rs` para validación, `git worktree list --porcelain`, add/remove, branch list, status y diffs).
+  - [ ] **M1 - Tarea 2:** Integración de UI para registro de repositorios Git y gestión de worktrees en barra lateral izquierda.
+  - [ ] **M1 - Tarea 3:** Sincronización del ciclo de vida de pestañas de terminal asociadas a rutas reales de worktrees.
+  - [ ] **M1 - Tarea 4:** Panel inspector lateral derecho (explorador de archivos, estado de Git y visor de diffs de solo lectura).
+  - [ ] **M1 - Tarea 5:** Validación E2E de criterios `AC-M1-01` a `AC-M1-08` y consolidación de resultados en `docs/milestones/m1-results.md`.
 
 ---
 

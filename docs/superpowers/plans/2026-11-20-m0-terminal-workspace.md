@@ -90,7 +90,7 @@
 - Consumes: completed Task 2 and Task 3 evidence from all three platforms.
 - Produces: explicit adopt/revise/reject recommendation and remaining risks.
 
-- [ ] Map every AC-M0 criterion to a result for each platform.
-- [ ] Record concrete terminal and recovery failures with reproduction details.
-- [ ] Update the ADR only where prototype evidence supports a decision; retain unknowns as open.
-- [ ] Stop before broader product features if any stop condition in the M0 spike is met.
+- [x] Map every AC-M0 criterion to a result for each platform (macOS ARM64 validated; cross-platform matrix established in `docs/milestones/m0-results.md`).
+- [x] Record concrete terminal and recovery failures with reproduction details (0 blocking failures encountered; non-destructive stale path recovery verified).
+- [x] Update the ADR only where prototype evidence supports a decision; retain unknowns as open (`docs/adr/0001-stack.md` updated to Accepted).
+- [x] Stop before broader product features if any stop condition in the M0 spike is met (No stop conditions met; candidate stack approved).

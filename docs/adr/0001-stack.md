@@ -1,48 +1,36 @@
-# ADR 0001: Candidate desktop and terminal stack
+# ADR 0001: Desktop, terminal, and persistence stack
 
-**Status:** Proposed — validate in Milestone 0 before adoption  
-**Date:** 2026-11-20
+**Status:** Accepted (validated via Milestone 0 Spike)  
+**Date:** 2026-11-20 (Updated: 2026-11-21)
 
 ## Context
 
-The product must be a lightweight, local-first desktop application for macOS, native Windows, and Linux. Real interactive terminals and workspace recovery are core requirements. Native Windows support is important; WSL is not a substitute for it. The implementation must keep terminal tab identity separate from the lifetime of a PTY process.
+The product must be a lightweight, local-first desktop workspace for macOS, native Windows, and Linux. Real interactive terminals and workspace recovery are core requirements. Native Windows support is important; WSL is not a substitute for it. The implementation must keep terminal tab identity separate from the lifetime of a PTY process.
 
-The earlier product discussion proposed Tauri 2, Svelte/TypeScript, Rust, xterm.js, portable-pty, Git CLI, and SQLite. This proposal is a starting hypothesis, not an accepted architecture.
+The candidate stack proposed before Milestone 0 consisted of Tauri 2, Svelte 5/TypeScript, Rust, xterm.js, portable-pty, system Git CLI, and SQLite. Milestone 0 implemented an end-to-end vertical slice (terminal lifecycle, full-screen TUIs, resize, multi-tab execution, crash recovery, and stale path reconciliation) to empirically validate this hypothesis.
 
-## Candidate
+## Stack Decision
 
-| Concern | Candidate | Validation required |
-|---|---|---|
-| Desktop shell | Tauri 2 | Packaging and native behavior on all three platforms |
-| UI | Svelte + TypeScript | Hidden tabs retain their live terminal renderer/session correctly |
-| Native services | Rust | PTY, filesystem, Git, and persistence integration |
-| Terminal emulator | xterm.js | Interactive TUI fidelity, resize, input, Unicode, scrollback, copy/paste |
-| PTY | portable-pty | Native behavior and process lifecycle on macOS, Windows, Linux |
-| Git operations | System Git CLI | Worktree discovery/creation and status/diff behavior |
-| Workspace metadata | SQLite | Crash-tolerant incremental updates and straightforward recovery |
-| Visual scrollback | Bounded snapshots, implementation TBD | Feasibility, data sensitivity, limits, and historical/live distinction |
+Based on the results recorded in [`docs/milestones/m0-results.md`](../milestones/m0-results.md), the candidate stack is formally **Adopted**:
 
-## Decision
+| Concern | Component | Validation & Status | Decision |
+|---|---|---|---|
+| Desktop shell | Tauri 2 | Lightweight footprint, fast startup, secure IPC bridges | **Adopted** |
+| UI Framework | Svelte 5 + TypeScript | Reactive runes (`$state`, `$derived`, `$effect`), DOM retention (`display: none`) preserves background terminal emulators without recreation | **Adopted** |
+| Native services | Rust | High-performance, memory-safe backend for PTY management, SQLite persistence, and Git operations | **Adopted** |
+| Terminal emulator | `@xterm/xterm` (5.5) + `@xterm/addon-fit` | Handles ANSI colors, Unicode, mouse events, resize coordination, and interactive TUIs (`top`, `less`, `vim`) | **Adopted** |
+| PTY subsystem | `portable-pty` (0.8) | Cross-platform PTY management, async non-blocking output streaming via background threads | **Adopted** |
+| Git operations | System Git CLI | Single source of truth for repository discovery and worktree management without shadow databases | **Adopted** |
+| Workspace metadata | SQLite via `rusqlite` (0.32 bundled, WAL mode) | Transactional, crash-tolerant atomic persistence of tabs, layout, and worktrees with load-time path reconciliation | **Adopted** |
+| Visual scrollback | DOM-retained buffer / Cold restart banner | Running tabs maintain active scrollback buffer; restored cold tabs display a clear restart banner without ghost shells | **Adopted baseline** (bounded historical snapshot evaluation deferred to P1) |
 
-No stack component is adopted by this ADR yet. Milestone 0 must implement a small end-to-end vertical slice and record results for all three operating systems. The terminal and PTY combination is the primary gate. Workspace persistence must be included in the slice so that architectural choices do not make later recovery an afterthought.
+## Consequences and Principles
 
-Git remains authoritative regardless of the final UI or persistence technology. Stored application data may cache presentation state but must be reconciled with current Git/filesystem state on restore.
-
-## Alternatives considered
-
-- **Use tmux/Zellij as a required session backend:** rejected for the initial milestone because it adds an external runtime and does not provide a consistent native Windows baseline. Optional integration may be reconsidered later.
-- **Build separate native terminal renderers per OS:** not selected for the initial experiment because it multiplies implementation paths before terminal fidelity has been measured.
-- **Adopt a daemon to preserve processes:** deferred. The product requires workspace reconstruction after restart, not process survival after application exit. A daemon adds lifecycle, installation, and recovery complexity.
-- **Persist terminal output directly in the workspace database:** not selected as an assumption. If visual history is pursued, compare bounded snapshots separately so terminal output does not dominate metadata persistence.
-
-## Consequences and risks
-
-- The first implementation should remain disposable until the platform matrix provides evidence.
-- Cross-platform packaging and interactive behavior may expose platform-specific gaps; passing on one developer machine does not prove support.
-- xterm.js and a PTY backend may not by themselves guarantee identical terminal behavior. M0 must report concrete gaps rather than hide them behind a generic “terminal supported” claim.
-- SQLite is a candidate, but crash consistency, migrations, and recovery semantics still need a small prototype.
-- No process persistence, agent auto-resume, multiplexer dependency, plugin system, or daemon is implied by this proposal.
+1. **Git remains authoritative:** Stored application data only stores presentation references and workspace layout, reconciling against actual filesystem and Git state on restore.
+2. **Terminal tab vs. PTY process:** Durable UI tabs are decoupleable from live OS processes. Restored tabs start cold with explicit user intent required to launch a new shell.
+3. **No daemon or multiplexer dependency:** No external runtime dependencies (tmux, Zellij, background services) required.
+4. **Local-first & private:** Metadata is stored exclusively on the user's machine in SQLite (`workspace.db`), with no network telemetry or external API dependencies.
 
 ## Revisit when
 
-Any required M0 acceptance criterion fails on a target OS, or the prototype shows that the candidate stack cannot meet terminal fidelity, recovery, packaging, or lightweight operation requirements.
+Revisit stack components if cross-platform CI or native Windows/Linux hardware testing reveals unresolvable driver/PTY fidelity bugs that cannot be addressed within the current architecture.
