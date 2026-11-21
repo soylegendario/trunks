@@ -61,11 +61,12 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
 
 ### Estado actual
 - **Hito:** Milestone 1 (M1 — Worktree-First Project Workflow & Git Integration).
-- **Rama de trabajo:** el código de la Tarea 1 vive en la rama `feat/m1-git-backend` y **no está en `main` hasta que se fusione**. Quien continúe con la Tarea 2 debe partir de esa rama (o de `main` si ya se fusionó). Al fusionarla, eliminar esta línea.
+- **Rama de trabajo:** el código de las Tareas 1 y 2 vive en la rama `feat/m1-git-backend` y **no está en `main` hasta que se fusione**. Quien continúe con la Tarea 3 debe partir de esa rama (o de `main` si ya se fusionó). Al fusionarla, eliminar esta línea.
 - **Progreso:**
   - [x] **Milestone 0 Completado:** Scaffold Tauri 2 + Svelte 5, PTY nativo y fidelidad de terminal (`portable-pty` + xterm.js), persistencia SQLite transaccional (WAL mode) con reconciliación de rutas y recuperación en frío sin procesos fantasma (`docs/milestones/m0-results.md`, `docs/adr/0001-stack.md`).
   - [x] **M1 - Tarea 1 Completada:** Servicio nativo de Git en Rust (`src-tauri/src/git.rs`; 8 comandos Tauri registrados; 43 tests, incluidos de integración contra `git` real, que exigen `git` en el PATH). Notas y desviaciones en el plan activo.
-  - [x] **M1 - Tarea 2 Completada:** Integración de UI para registro de repositorios Git y gestión de worktrees en barra lateral izquierda (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, componentes modales y `WorktreeList.svelte`).
+  - [x] **M1 - Tarea 2 Completada:** Integración de UI para registro de repositorios Git y gestión de worktrees en barra lateral izquierda (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, componentes modales y `WorktreeList.svelte`). Verificación manual **parcial** y deuda conocida: ver la sección "Task 2 review and manual pass" del plan activo.
+  - ⚠️ **Decisión pendiente antes de la Tarea 3:** el store persiste los worktrees en SQLite como caché y pinta la UI desde ella al arrancar, lo que tensiona con "Git como única fuente de verdad". Detalle y recomendación en el plan activo.
   - [ ] **M1 - Tarea 3 (Siguiente):** Sincronización del ciclo de vida de pestañas de terminal asociadas a rutas reales de worktrees.
   - [ ] **M1 - Tarea 4:** Panel inspector lateral derecho (explorador de archivos, estado de Git y visor de diffs de solo lectura).
   - [ ] **M1 - Tarea 5:** Validación E2E de criterios `AC-M1-01` a `AC-M1-08` y consolidación de resultados en `docs/milestones/m1-results.md`.

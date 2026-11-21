@@ -121,7 +121,7 @@
 **Interfaces:**
 - Consumes: Tauri Git commands and SQLite project store.
 - Produces: Dynamic sidebar displaying real repositories, active worktrees, branches, and quick action buttons.
-- **Verify first (unverified):** the Rust commands take snake_case parameters (e.g. `repo_path`, `worktree_path`, `new_branch`). Tauri 2 normally expects camelCase keys from JavaScript (`repoPath`, `worktreePath`, `newBranch`), but this has never been exercised through the real IPC: Task 1 tests call the commands as plain Rust functions. Confirm the argument naming with one real `invoke` call in `src/lib/git.ts` before building UI on top of it. Returned structs keep snake_case fields (`is_dir`, `index_status`, ...); `GitStatusKind` serializes as `tracked` / `untracked` / `conflicted`.
+- **IPC argument naming (partially verified):** the Rust commands take snake_case parameters (e.g. `repo_path`, `worktree_path`, `new_branch`) and `src/lib/git.ts` passes camelCase keys (`repoPath`, `worktreePath`, `newBranch`), the Tauri 2 convention. Confirmed through the real IPC in the running app for `git_validate_repo` and `git_list_worktrees`. `git_list_branches` (called when the create-worktree modal opens) and `git_create_worktree` were exercised by the manual pass, reported OK without detail. `git_remove_worktree`, `git_get_status`, `git_get_diff` and `git_list_files` have not been checked through the IPC (Task 4 will exercise the last three). Task 1 tests call the commands as plain Rust functions. Returned structs keep snake_case fields (`is_dir`, `index_status`, ...); `GitStatusKind` serializes as `tracked` / `untracked` / `conflicted`.
 
 - [x] Implement `src/lib/git.ts` wrapping Tauri IPC calls with TypeScript interfaces.
 - [x] Replace static project fixture in `+page.svelte` with dynamic loading from SQLite + live Git discovery.
@@ -137,6 +137,21 @@
 - Created modal components: `AddProjectModal.svelte`, `CreateWorktreeModal.svelte`, `RemoveWorktreeModal.svelte`, and `RemoveProjectModal.svelte`.
 - Created `WorktreeList.svelte` rendering the tree of registered repositories and their worktrees in the left sidebar with branch tags, status indicators, and quick action buttons.
 - Updated `src/routes/+page.svelte` to initialize `projectStore`, listen to `window` focus for auto-refresh, and updated the interactive M1 checklist.
+
+**Task 2 review and manual pass (2026-11-21):**
+- Verified statically: `npm run check` (0 errors, 0 warnings), `npm run build`, `cargo test` (43 passed; no Rust changed in this task).
+- Verified by hand in `npm run tauri dev` against a disposable repo with 8 worktrees (main, linked, detached, locked, prunable, clean, dirty, Unicode/space path): repository registration, worktree discovery with correct states and `ñ`/space paths, the sidebar scrolling with several repositories, per-project collapse, and a terminal opened from a worktree starting in a directory with spaces and `ñ`. Create worktree and the not-a-repo error were reported OK without detail. **Not yet verified:** guarded removal (`AC-M1-06`: dirty without/with force, locked, prunable, main), external synchronisation (`AC-M1-05`), restart persistence, and behaviour of "open terminal" on a prunable worktree. Task 5 must still run these.
+- Fixed after the manual pass (`f68aa15`): the sidebar did not scroll with more than one repository (`.project-card` had no `flex-shrink: 0`); added per-project collapse (kept in `localStorage`) and compact worktree rows; the primary worktree tag now reads `primary` instead of `main`.
+- **Open decision before Task 3 — SQLite worktree cache:** `projects.svelte.ts` writes every project's worktree list (branch, path, stale flag) to SQLite on each refresh and paints the sidebar from it on startup (with invented `head: null`, `bare: false`). This conflicts with the Global Constraint "never create a secondary shadow database for ... worktrees" and with "Git as single source of truth". Recommended: persist only project name and path; always read worktrees from Git. Decide before Task 3 builds on it.
+- Known issues found by code review, not yet fixed or reproduced:
+  - `persist()` rewrites the full project list on every `refreshProject`, so `refreshAll` (and every window focus) fires N concurrent full writes even when nothing changed.
+  - Worktree ids are index-based (`<projectId>-wt-<idx>`) and unstable across refreshes; do not bind tabs or selection to them (Task 3).
+  - `addProject` de-duplicates by lower-cased path, which merges distinct repos on case-sensitive filesystems.
+  - `createWorktree` sets `selectedWorktreePath` without `selectedProjectId`, so creating in a non-selected project may leave the selection inconsistent (checklist step 10, unverified).
+  - The layout columns `selected_project_name` / `selected_worktree_name` are filled with a project id and a path, and no restore of the selection on startup was found.
+  - "Open terminal" always creates a new tab (Task 3 asks to focus an existing one) and is enabled on prunable worktrees.
+  - No native directory picker (no dialog plugin installed): repositories are added by typing a path.
+  - There are no frontend tests; the store's reconciliation logic is untested.
 
 ---
 
