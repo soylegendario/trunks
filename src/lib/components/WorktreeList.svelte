@@ -30,6 +30,42 @@
   let targetProject = $state<ProjectState | null>(null);
   let targetWorktree = $state<GitWorktreeInfo | null>(null);
 
+  // Collapsed projects are a per-user UI preference (not Git state), kept in localStorage.
+  const COLLAPSED_KEY = "trunks.sidebar.collapsedProjects";
+
+  function loadCollapsed(): Record<string, boolean> {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]");
+      const ids: string[] = Array.isArray(parsed)
+        ? parsed.filter((i) => typeof i === "string")
+        : [];
+      return Object.fromEntries(ids.map((id) => [id, true]));
+    } catch {
+      return {}; // storage unavailable (prerender, private mode): start expanded
+    }
+  }
+
+  let collapsed = $state<Record<string, boolean>>(loadCollapsed());
+
+  function setCollapsed(projectId: string, value: boolean) {
+    collapsed[projectId] = value;
+    try {
+      const live = new Set(projectStore.projects.map((p) => p.id));
+      const ids = Object.keys(collapsed).filter((id) => collapsed[id] && live.has(id));
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify(ids));
+    } catch {
+      // preference only: ignore storage failures
+    }
+  }
+
+  /** Middle ellipsis: the tail of a path is what tells worktrees apart. */
+  function shortPath(path: string, max = 40): string {
+    if (path.length <= max) return path;
+    const head = Math.ceil((max - 1) * 0.35);
+    const tail = max - 1 - head;
+    return `${path.slice(0, head)}…${path.slice(path.length - tail)}`;
+  }
+
   function openCreateWorktree(project: ProjectState) {
     targetProject = project;
     createWorktreeOpen = true;
@@ -47,6 +83,7 @@
   }
 
   function handleWorktreeCreated(wt: GitWorktreeInfo, openTerminal: boolean) {
+    if (targetProject) setCollapsed(targetProject.id, false); // make the new worktree visible
     if (openTerminal && targetProject) {
       const wtName = wt.branch || wt.path.split(/[\\/]/).pop() || "worktree";
       onOpenTerminal(wt.path, `wt:${wtName}`, wtName, targetProject.name);
@@ -101,17 +138,26 @@
       </div>
     {:else}
       {#each projectStore.projects as project (project.id)}
-        <div class="project-card" class:stale={project.is_stale}>
+        {@const isCollapsed = Boolean(collapsed[project.id])}
+        <div class="project-card" class:stale={project.is_stale} class:collapsed={isCollapsed}>
           <div class="project-header">
-            <div class="project-info" title={project.path}>
+            <button
+              type="button"
+              class="project-info"
+              title={project.path}
+              aria-expanded={!isCollapsed}
+              onclick={() => setCollapsed(project.id, !isCollapsed)}
+            >
+              <span class="chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
               <span class="project-icon">📦</span>
               <span class="project-name">{project.name}</span>
+              <span class="worktree-count" title="Worktrees">{project.worktrees.length}</span>
               {#if project.is_stale}
                 <span class="stale-badge" title={project.stale_reason || "Directory not found"}>
                   ⚠️ Stale
                 </span>
               {/if}
-            </div>
+            </button>
 
             <div class="project-actions">
               <button
@@ -139,6 +185,7 @@
             </div>
           </div>
 
+          {#if !isCollapsed}
           <div class="worktree-items-list">
             {#if project.isLoading && project.worktrees.length === 0}
               <div class="loading-state">Querying git worktrees...</div>
@@ -148,12 +195,14 @@
               {#each project.worktrees as wt, idx (wt.path)}
                 {@const isMain = idx === 0}
                 {@const isSelected = projectStore.selectedWorktreePath === wt.path}
+                {@const wtName = wt.branch || wt.path.split(/[\\/]/).pop() || "worktree"}
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div
                   class="worktree-item"
                   class:selected={isSelected}
                   class:stale={Boolean(wt.prunable)}
+                  title={`${wt.path}\n${wt.branch ?? "detached"}${wt.head ? ` @ ${wt.head}` : ""}`}
                   onclick={() => selectWorktree(project, wt)}
                 >
                   <div class="worktree-main-row">
@@ -166,7 +215,7 @@
 
                     <div class="worktree-tags">
                       {#if isMain}
-                        <span class="tag main" title="Primary repository worktree">main</span>
+                        <span class="tag primary" title="Primary worktree of the repository">primary</span>
                       {/if}
                       {#if wt.head && wt.branch}
                         <span class="tag commit" title={`HEAD: ${wt.head}`}>
@@ -180,41 +229,45 @@
                         <span class="tag stale" title={wt.prunable}>⚠️ stale</span>
                       {/if}
                     </div>
-                  </div>
 
-                  <div class="worktree-path-row">
-                    <span class="worktree-path" title={wt.path}>{wt.path}</span>
-                  </div>
-
-                  <div class="worktree-actions-row">
-                    <button
-                      class="wt-btn terminal-btn"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        const wtName = wt.branch || wt.path.split(/[\\/]/).pop() || "worktree";
-                        onOpenTerminal(wt.path, `wt:${wtName}`, wtName, project.name);
-                      }}
-                      title="Open interactive terminal in this worktree"
-                    >
-                      + Terminal
-                    </button>
-                    {#if !isMain}
+                    <div class="worktree-actions">
                       <button
-                        class="wt-btn remove-btn"
+                        class="wt-btn terminal-btn"
                         onclick={(e) => {
                           e.stopPropagation();
-                          openRemoveWorktree(project, wt);
+                          onOpenTerminal(wt.path, `wt:${wtName}`, wtName, project.name);
                         }}
-                        title="Remove worktree"
+                        title="Open interactive terminal in this worktree"
+                        aria-label="Open terminal in this worktree"
                       >
-                        🗑
+                        &gt;_
                       </button>
-                    {/if}
+                      {#if !isMain}
+                        <button
+                          class="wt-btn remove-btn"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            openRemoveWorktree(project, wt);
+                          }}
+                          title="Remove worktree"
+                          aria-label="Remove worktree"
+                        >
+                          🗑
+                        </button>
+                      {/if}
+                    </div>
                   </div>
+
+                  {#if isSelected}
+                    <div class="worktree-path-row">
+                      <span class="worktree-path" title={wt.path}>{shortPath(wt.path)}</span>
+                    </div>
+                  {/if}
                 </div>
               {/each}
             {/if}
           </div>
+          {/if}
         </div>
       {/each}
     {/if}
@@ -389,7 +442,14 @@
     border: 1px solid #313244;
     border-radius: 6px;
     overflow: hidden;
+    /* A flex column would otherwise squeeze cards (overflow:hidden lets them shrink to
+       zero height), so nothing overflowed and the sidebar never scrolled. */
+    flex-shrink: 0;
     transition: border-color 0.15s ease;
+  }
+
+  .project-card.collapsed .project-header {
+    border-bottom: none;
   }
 
   .project-card.stale {
@@ -411,6 +471,34 @@
     gap: 6px;
     min-width: 0;
     flex: 1;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .project-info:hover .project-name {
+    color: #89b4fa;
+  }
+
+  .chevron {
+    width: 10px;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #a6adc8;
+  }
+
+  .worktree-count {
+    flex-shrink: 0;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background: #313244;
+    color: #a6adc8;
   }
 
   .project-name {
@@ -466,8 +554,8 @@
   .worktree-items-list {
     display: flex;
     flex-direction: column;
-    padding: 6px;
-    gap: 6px;
+    padding: 4px;
+    gap: 3px;
   }
 
   .loading-state,
@@ -482,10 +570,10 @@
     background: #11111b;
     border: 1px solid #313244;
     border-radius: 5px;
-    padding: 8px 10px;
+    padding: 5px 8px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
@@ -517,6 +605,7 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
+    flex: 1;
   }
 
   .branch-icon {
@@ -537,6 +626,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
   }
 
   .tag {
@@ -546,7 +636,7 @@
     font-weight: 500;
   }
 
-  .tag.main {
+  .tag.primary {
     background: rgba(166, 227, 161, 0.15);
     color: #a6e3a1;
     border: 1px solid #a6e3a1;
@@ -571,6 +661,7 @@
 
   .worktree-path-row {
     display: flex;
+    min-width: 0;
   }
 
   .worktree-path {
@@ -582,12 +673,11 @@
     text-overflow: ellipsis;
   }
 
-  .worktree-actions-row {
+  .worktree-actions {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
-    margin-top: 2px;
+    gap: 2px;
+    flex-shrink: 0;
   }
 
   .wt-btn {
@@ -603,6 +693,8 @@
     background: #313244;
     color: #89b4fa;
     padding: 3px 6px;
+    font-family: monospace;
+    font-weight: 700;
   }
 
   .wt-btn.terminal-btn:hover {
