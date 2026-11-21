@@ -16,7 +16,8 @@ This repository is developed cooperatively across multiple AI agents (Junie, Cod
   - **Done:**
     - Task 1 — native Git backend in Rust (`src-tauri/src/git.rs`, eight Tauri commands registered, 43 tests passing).
     - Task 2 — project registration and worktree management UI (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, modals and sidebar `WorktreeList.svelte`).
-  - **Next Objective:** Task 3 — terminal tab lifecycle and real worktree path synchronization.
+    - Task 3 — tabs bound to Git-reported worktree paths (open-or-focus, missing-directory guard). Code and unit tests done; manual `pwd` and cold-restart passes pending.
+  - **Next Objective:** Task 4 — read-only right-side inspector (file tree, Git status, diff viewer).
 
 Start with:
 

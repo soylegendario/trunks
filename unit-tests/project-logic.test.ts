@@ -8,6 +8,8 @@ import {
   toPersistedProjects,
   resolveSelectedWorktree,
   restoreSelection,
+  findTabForWorktree,
+  tabsForWorktree,
   type ProjectState,
 } from "../src/lib/project-logic.ts";
 import type { GitWorktreeInfo } from "../src/lib/git.ts";
@@ -134,5 +136,36 @@ describe("selection restore on startup", () => {
       projectId: null,
       worktreePath: null,
     });
+  });
+});
+
+describe("findTabForWorktree", () => {
+  const tabs = [
+    { id: "a", cwd: "/r/main", status: "stopped" },
+    { id: "b", cwd: "/r/wt", status: "stopped" },
+    { id: "c", cwd: "/r/wt", status: "running" },
+  ];
+  it("prefers a running tab for the worktree", () => {
+    assert.equal(findTabForWorktree(tabs, "/r/wt")?.id, "c");
+  });
+  it("falls back to a stopped tab and ignores trailing slashes", () => {
+    assert.equal(findTabForWorktree(tabs, "/r/main/")?.id, "a");
+  });
+  it("returns undefined when no tab is bound", () => {
+    assert.equal(findTabForWorktree(tabs, "/r/other"), undefined);
+  });
+});
+
+describe("tabsForWorktree", () => {
+  const tabs = [
+    { id: "a", cwd: "/r/main" },
+    { id: "b", cwd: "/r/wt" },
+    { id: "c", cwd: "/r/wt/" },
+  ];
+  it("returns every tab of the worktree, in order", () => {
+    assert.deepEqual(tabsForWorktree(tabs, "/r/wt").map((t) => t.id), ["b", "c"]);
+  });
+  it("returns an empty list when nothing is bound", () => {
+    assert.deepEqual(tabsForWorktree(tabs, "/r/none"), []);
   });
 });

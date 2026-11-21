@@ -54,17 +54,17 @@
   <div class="modal-backdrop" onclick={handleClose}>
     <div class="modal-dialog" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
-        <h3>Add Git Repository</h3>
+        <h3>Add Project</h3>
         <button class="close-btn" onclick={handleClose} disabled={isLoading}>×</button>
       </div>
 
       <div class="modal-body">
         <p class="description">
-          Enter the absolute path to an existing local Git repository. Trunks will validate the repository and discover all its worktrees.
+          Enter the absolute path to an existing local Git project. Trunks will validate the project and discover all its worktrees.
         </p>
 
         <div class="form-group">
-          <label for="repo-path">Repository Path</label>
+          <label for="repo-path">Project Path</label>
           <input
             id="repo-path"
             type="text"
@@ -91,7 +91,7 @@
           {#if isLoading}
             Validating...
           {:else}
-            Add Repository
+            Add Project
           {/if}
         </button>
       </div>

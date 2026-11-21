@@ -59,12 +59,12 @@
         <div class="info-box">
           <span class="info-icon">ℹ️</span>
           <span>
-            This only removes the project reference from Trunks. <strong>Your repository files and worktrees on disk will not be deleted or modified.</strong>
+            This only removes the project reference from Trunks. <strong>Your project files and worktrees on disk will not be deleted or modified.</strong>
           </span>
         </div>
 
         <div class="path-display">
-          <span class="label">Repository Path:</span>
+          <span class="label">Project Path:</span>
           <code>{project.path}</code>
         </div>
       </div>

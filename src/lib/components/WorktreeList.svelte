@@ -12,6 +12,8 @@
   let {
     onOpenTerminal,
     onSelectWorktree,
+    runningTerminals = () => 0,
+    restoredTerminals = () => 0,
   }: {
     onOpenTerminal: (
       cwd: string,
@@ -20,6 +22,10 @@
       projectName: string
     ) => void;
     onSelectWorktree?: (projectId: string, worktreePath: string) => void;
+    /** Number of live terminals bound to a worktree path. */
+    runningTerminals?: (worktreePath: string) => number;
+    /** Number of restored (not yet started) terminals bound to a worktree path. */
+    restoredTerminals?: (worktreePath: string) => number;
   } = $props();
 
   let addProjectOpen = $state(false);
@@ -100,24 +106,23 @@
 <div class="worktree-list-container">
   <div class="sidebar-header">
     <div class="header-title">
-      <span class="icon">📂</span>
-      <h3>Repositories</h3>
+      <h3>Projects</h3>
     </div>
     <div class="header-actions">
       <button
         class="icon-btn"
         class:spinning={projectStore.isRefreshing}
         onclick={() => projectStore.refreshAll()}
-        title="Refresh all repositories & worktrees"
+        title="Refresh all projects & worktrees"
       >
         ↻
       </button>
       <button
         class="action-btn-sm primary"
         onclick={() => (addProjectOpen = true)}
-        title="Add a local Git repository"
+        title="Add a local Git project"
       >
-        + Add Repo
+        + Add Project
       </button>
     </div>
   </div>
@@ -125,15 +130,15 @@
   <div class="sidebar-content">
     {#if projectStore.projects.length === 0}
       <div class="empty-state">
-        <p class="empty-text">No repositories registered yet.</p>
+        <p class="empty-text">No projects registered yet.</p>
         <p class="empty-subtext">
-          Add an existing Git repository to discover and manage its worktrees and launch terminal workspaces.
+          Add an existing Git project to discover and manage its worktrees and launch terminal workspaces.
         </p>
         <button
           class="add-repo-btn"
           onclick={() => (addProjectOpen = true)}
         >
-          + Add Repository
+          + Add Project
         </button>
       </div>
     {:else}
@@ -149,7 +154,6 @@
               onclick={() => setCollapsed(project.id, !isCollapsed)}
             >
               <span class="chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
-              <span class="project-icon">📦</span>
               <span class="project-name">{project.name}</span>
               <span class="worktree-count" title="Worktrees">{project.worktrees.length}</span>
               {#if project.is_stale}
@@ -163,7 +167,7 @@
               <button
                 class="icon-btn-sm"
                 onclick={() => openCreateWorktree(project)}
-                title="Create new worktree in this repository"
+                title="Create new worktree in this project"
               >
                 + wt
               </button>
@@ -178,7 +182,7 @@
               <button
                 class="icon-btn-sm danger"
                 onclick={() => openRemoveProject(project)}
-                title="Remove repository from workspace"
+                title="Remove project from workspace"
               >
                 ✕
               </button>
@@ -208,6 +212,17 @@
                   <div class="worktree-main-row">
                     <div class="worktree-branch-box">
                       <span class="branch-icon">⎇</span>
+                      {#if runningTerminals(wt.path) > 0}
+                        <span
+                          class="term-dot"
+                          title={`${runningTerminals(wt.path)} terminal(s) running`}
+                        ></span>
+                      {:else if restoredTerminals(wt.path) > 0}
+                        <span
+                          class="term-dot restored"
+                          title={`${restoredTerminals(wt.path)} terminal(s) restored, not running`}
+                        ></span>
+                      {/if}
                       <span class="branch-name" title={wt.branch || "detached"}>
                         {wt.branch || (wt.head ? `detached (${wt.head.substring(0, 7)})` : "detached")}
                       </span>
@@ -215,7 +230,7 @@
 
                     <div class="worktree-tags">
                       {#if isMain}
-                        <span class="tag primary" title="Primary worktree of the repository">primary</span>
+                        <span class="tag primary" title="Primary worktree of the project">primary</span>
                       {/if}
                       {#if wt.head && wt.branch}
                         <span class="tag commit" title={`HEAD: ${wt.head}`}>
@@ -237,7 +252,10 @@
                           e.stopPropagation();
                           onOpenTerminal(wt.path, `wt:${wtName}`, wtName, project.name);
                         }}
-                        title="Open interactive terminal in this worktree"
+                        disabled={Boolean(wt.prunable)}
+                        title={wt.prunable
+                          ? "Worktree directory is missing; prune it or restore it first"
+                          : "Open or focus the terminal of this worktree"}
                         aria-label="Open terminal in this worktree"
                       >
                         &gt;_
@@ -680,6 +698,20 @@
     flex-shrink: 0;
   }
 
+  .term-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #3fb950;
+    box-shadow: 0 0 5px rgba(63, 185, 80, 0.7);
+  }
+
+  .term-dot.restored {
+    background: #f0883e;
+    box-shadow: 0 0 5px rgba(240, 136, 62, 0.7);
+  }
+
   .wt-btn {
     border: none;
     border-radius: 3px;
@@ -700,6 +732,11 @@
   .wt-btn.terminal-btn:hover {
     background: #89b4fa;
     color: #11111b;
+  }
+
+  .wt-btn.terminal-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .wt-btn.remove-btn {

@@ -166,10 +166,14 @@
 - **Read first:** the "Task 2 review and manual pass" section above. Bind tabs to the worktree path reported by Git (worktrees have no ids and are never read from SQLite). Decide and test what "open terminal" does on a prunable worktree whose directory is missing, and make it focus an existing tab for that worktree instead of always creating a new one. Re-check whether `db.rs` needs any change: tabs already persist `cwd`, `project_name` and `worktree_name`.
 - Produces: Terminal tabs whose PTY shells launch in the exact worktree directory and retain association in SQLite.
 
-- [ ] Connect worktree selection to terminal tabs: clicking a worktree opens or focuses a terminal tab in that worktree's path.
-- [ ] Update tab creation to automatically populate tab metadata (`projectName`, `worktreeName`, `cwd`) from the active worktree.
+- [x] Connect worktree selection to terminal tabs: clicking a worktree opens or focuses a terminal tab in that worktree's path.
+- [x] Update tab creation to automatically populate tab metadata (`projectName`, `worktreeName`, `cwd`) from the active worktree.
 - [ ] Verify that spawning new tabs launches the shell directly in the worktree PWD (`pwd` verified).
 - [ ] Test cold restart: verify saved tabs retain their real project/worktree paths and restart cleanly on user action.
+
+  - Task 3 notes: tabs bind to the Git-reported worktree path via `findTabForWorktree` (`project-logic.ts`, 3 unit tests); "open terminal" focuses the existing tab (preferring a running one) instead of creating duplicates. The button is disabled on prunable worktrees, and `pty_create` now returns an error when the cwd does not exist instead of silently starting the shell elsewhere (restored stale tabs show that error on Start). `db.rs` needed no change: tabs already persist `cwd`, `project_name`, `worktree_name` and are reconciled as stale on load.
+  - Multi-terminal follow-up: a worktree can have several terminals. The tab bar shows only the tabs of the selected worktree (`tabsForWorktree`), `+` opens another terminal in it, selecting a worktree activates one of its tabs, and 'open terminal' selects the worktree and focuses its first tab (creating one if none). Tabs of other worktrees keep their live PTY sessions.
+  - Pending manual checks (need the running app, not done): `pwd` in a new worktree tab, and the cold restart pass.
 
 ---
 

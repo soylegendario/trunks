@@ -76,3 +76,28 @@ export function restoreSelection(
   }
   return { projectId: null, worktreePath: null };
 }
+
+/** Path comparison for tabs: tolerant of trailing separators and, on Windows-style paths, case. */
+function normalizePath(path: string): string {
+  const trimmed = path.length > 1 ? path.replace(/[\\/]+$/, "") : path;
+  return /^[A-Za-z]:[\\/]/.test(trimmed) ? trimmed.replace(/\\/g, "/").toLowerCase() : trimmed;
+}
+
+/**
+ * Finds the existing tab bound to a worktree (same cwd as the path Git reports), so "open
+ * terminal" focuses it instead of piling up duplicates. Prefers a running tab.
+ */
+export function findTabForWorktree<T extends { cwd: string; status: string }>(
+  tabs: T[],
+  worktreePath: string
+): T | undefined {
+  const target = normalizePath(worktreePath);
+  const matches = tabs.filter((t) => normalizePath(t.cwd) === target);
+  return matches.find((t) => t.status === "running") ?? matches[0];
+}
+
+/** Tabs bound to a worktree (same cwd as the path Git reports), in their original order. */
+export function tabsForWorktree<T extends { cwd: string }>(tabs: T[], worktreePath: string): T[] {
+  const target = normalizePath(worktreePath);
+  return tabs.filter((t) => normalizePath(t.cwd) === target);
+}

@@ -185,7 +185,7 @@
           <div class="form-group">
             <label for="existing-branch-select">Select Branch</label>
             {#if isLoadingBranches}
-              <div class="loading-hint">Loading repository branches...</div>
+              <div class="loading-hint">Loading project branches...</div>
             {:else if branches.length === 0}
               <div class="empty-hint">No branches found.</div>
             {:else}

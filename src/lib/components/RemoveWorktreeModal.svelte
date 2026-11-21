@@ -79,7 +79,7 @@
             <div>
               <strong>Primary Worktree Protected</strong>
               <p>
-                The primary worktree (<code>{worktree.path}</code>) is the core repository root and cannot be removed by Git.
+                The primary worktree (<code>{worktree.path}</code>) is the core project root and cannot be removed by Git.
               </p>
             </div>
           </div>

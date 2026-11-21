@@ -10,6 +10,7 @@
     type TerminalTabItem,
   } from "$lib/storage";
   import { projectStore } from "$lib/projects.svelte";
+  import { findTabForWorktree, tabsForWorktree } from "$lib/project-logic";
   import TerminalView from "$lib/TerminalView.svelte";
   import WorktreeList from "$lib/components/WorktreeList.svelte";
 
@@ -25,6 +26,28 @@
   let sessions = $state<Map<string, TerminalSession>>(new Map());
   let dbStatus = $state<string>("Connecting to SQLite...");
   let isLoaded = $state(false);
+
+  // Only the tabs of the selected worktree are shown; with no selection, all of them.
+  let visibleTabs = $derived(
+    projectStore.selectedWorktreePath
+      ? tabsForWorktree(tabs, projectStore.selectedWorktreePath)
+      : tabs
+  );
+
+  $effect(() => {
+    if (!isLoaded) return;
+    if (visibleTabs.some((t) => t.id === activeTabId)) return;
+    const next = visibleTabs[visibleTabs.length - 1]?.id ?? "";
+    activeTabId = next;
+    persistLayoutState();
+    if (next) {
+      requestAnimationFrame(() => {
+        const s = sessions.get(next);
+        s?.fit();
+        s?.terminal.focus();
+      });
+    }
+  });
 
   // M1 Acceptance Checklist State
   let checklist = $state({
@@ -120,6 +143,46 @@
     });
   }
 
+  function selectedWorktreeContext() {
+    const path = projectStore.selectedWorktreePath;
+    if (!path) return null;
+    const project = projectStore.projects.find((p) => p.id === projectStore.selectedProjectId);
+    const wt = project?.worktrees.find((w) => w.path === path);
+    const name = wt?.branch || path.split(/[\\/]/).pop() || "worktree";
+    return { path, name, projectName: project?.name || "Trunks Workspace" };
+  }
+
+  /** Opens an additional terminal in the selected worktree (or home when none is selected). */
+  async function newTerminalInSelection() {
+    const ctx = selectedWorktreeContext();
+    if (!ctx) {
+      await createTab();
+      return;
+    }
+    const n = tabsForWorktree(tabs, ctx.path).length;
+    const title = n === 0 ? `wt:${ctx.name}` : `wt:${ctx.name} ${n + 1}`;
+    await createTab(ctx.path, title, ctx.name, ctx.projectName);
+  }
+
+  /** Selects the worktree and focuses its terminal, creating the first one if it has none. */
+  async function openOrFocusWorktreeTab(
+    cwd: string,
+    title: string,
+    worktreeName: string,
+    projectName: string
+  ) {
+    const project = projectStore.projects.find((p) => p.name === projectName);
+    if (project) projectStore.selectedProjectId = project.id;
+    projectStore.selectedWorktreePath = cwd;
+
+    const existing = findTabForWorktree(tabs, cwd);
+    if (existing) {
+      selectTab(existing.id);
+      return;
+    }
+    await createTab(cwd, title, worktreeName, projectName);
+  }
+
   async function closeTab(id: string, event?: Event) {
     if (event) event.stopPropagation();
     const session = sessions.get(id);
@@ -132,11 +195,8 @@
     tabs = remaining;
 
     if (activeTabId === id) {
-      if (remaining.length > 0) {
-        activeTabId = remaining[remaining.length - 1].id;
-      } else {
-        activeTabId = "";
-      }
+      // The effect on visibleTabs picks the next tab of the selected worktree.
+      activeTabId = "";
     }
 
     await deleteTab(id).catch(console.error);
@@ -334,8 +394,13 @@
     {#if showLeft}
       <aside class="panel left-panel">
         <WorktreeList
-          onOpenTerminal={(cwd, title, worktreeName, projectName) =>
-            createTab(cwd, title, worktreeName, projectName)}
+          onOpenTerminal={openOrFocusWorktreeTab}
+          runningTerminals={(path) =>
+            tabsForWorktree(tabs, path).filter((t) => t.status === "running").length}
+          restoredTerminals={(path) =>
+            tabsForWorktree(tabs, path).filter(
+              (t) => t.isRestored && t.status === "stopped"
+            ).length}
           onSelectWorktree={() => persistLayoutState()}
         />
       </aside>
@@ -344,7 +409,7 @@
     <main class="panel center-panel" bind:this={centerElement}>
       <div class="panel-header center-header">
         <div class="tabs-bar">
-          {#each tabs as tab (tab.id)}
+          {#each visibleTabs as tab (tab.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
@@ -413,7 +478,11 @@
               </button>
             </div>
           {/each}
-          <button class="new-tab-btn" onclick={() => createTab()} title="Open new terminal tab">
+          <button
+            class="new-tab-btn"
+            onclick={newTerminalInSelection}
+            title="Open a new terminal in the selected worktree"
+          >
             +
           </button>
         </div>
@@ -423,21 +492,20 @@
       </div>
 
       <div class="panel-content center-content">
-        {#if tabs.length === 0}
+        {#if visibleTabs.length === 0}
           <div class="empty-state">
-            <p>No active terminal sessions.</p>
-            <button class="action-btn primary" onclick={() => createTab()}>
+            <p>No terminals in this worktree.</p>
+            <button class="action-btn primary" onclick={newTerminalInSelection}>
               + Open Terminal
             </button>
           </div>
-        {:else}
-          {#each tabs as tab (tab.id)}
-            {@const session = sessions.get(tab.id)}
-            {#if session}
-              <TerminalView {session} isActive={activeTabId === tab.id} />
-            {/if}
-          {/each}
         {/if}
+        {#each tabs as tab (tab.id)}
+          {@const session = sessions.get(tab.id)}
+          {#if session}
+            <TerminalView {session} isActive={activeTabId === tab.id} />
+          {/if}
+        {/each}
       </div>
     </main>
 
@@ -455,7 +523,7 @@
                 <input type="checkbox" bind:checked={checklist.ac1} />
                 <span><strong>AC-M1-01:</strong> Local Git Project Registration</span>
               </label>
-              <span class="hint-text">Add local repo via "+ Add Repo" in the left sidebar.</span>
+              <span class="hint-text">Add local project via "+ Add Project" in the left sidebar.</span>
             </div>
 
             <div class="checklist-item">
