@@ -5,15 +5,6 @@
 
 ---
 
-## Resumen Rápido de Inicio
+Este archivo es **solo un puntero**. El estado del proyecto, el plan activo, la siguiente tarea, los comandos de desarrollo y las restricciones arquitectónicas viven únicamente en [`AGENTS.md`](AGENTS.md), que es la única fuente de verdad.
 
-1. **Lee `AGENTS.md`**: Contiene las restricciones arquitectónicas innegociables (no convertir en IDE, no orquestar IA en la app, Git como única fuente de verdad) y el protocolo de handoff.
-2. **Revisa el estado actual**:
-   - `README.md` (`## Current stage`)
-   - Plan activo en `docs/superpowers/plans/` (actualmente `docs/superpowers/plans/2026-11-20-m0-terminal-workspace.md`)
-3. **Identifica la siguiente tarea**: Busca la primera tarea pendiente (`- [ ]`) en el plan activo.
-4. **Comandos de desarrollo**:
-   - Frontend: `npm run check && npm run build`
-   - Rust: `cargo check --manifest-path src-tauri/Cargo.toml` / `cargo test --manifest-path src-tauri/Cargo.toml`
-   - Dev: `npm run tauri dev`
-   *(Si `cargo` no está en PATH, ejecutar `export PATH="$HOME/.cargo/bin:$PATH"`)*.
+No añadir aquí estado, rutas de planes ni comandos: duplicarlos hace que se desincronicen entre sesiones y agentes.

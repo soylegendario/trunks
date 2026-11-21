@@ -60,14 +60,16 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
 ## 4. Estado Actual del Proyecto y Hoja de Ruta
 
 ### Estado actual
-- **Hito:** Milestone 1 (M1 — Worktree-First Project Workflow & Git Integration).
+- **Hito:** Milestone 1 (M1 — Worktree-First Project Workflow & Git Integration) **completado**; pendiente de planificar M2.
+- **Rama de trabajo:** el código de las Tareas 1 y 2 vive en la rama `feat/m1-git-backend` y **no está en `main` hasta que se fusione**. Quien continúe con la Tarea 3 debe partir de esa rama (o de `main` si ya se fusionó). Al fusionarla, eliminar esta línea.
 - **Progreso:**
   - [x] **Milestone 0 Completado:** Scaffold Tauri 2 + Svelte 5, PTY nativo y fidelidad de terminal (`portable-pty` + xterm.js), persistencia SQLite transaccional (WAL mode) con reconciliación de rutas y recuperación en frío sin procesos fantasma (`docs/milestones/m0-results.md`, `docs/adr/0001-stack.md`).
-  - [ ] **M1 - Tarea 1 (Siguiente):** Servicio nativo de Git en Rust (`src-tauri/src/git.rs` para validación, `git worktree list --porcelain`, add/remove, branch list, status y diffs).
-  - [ ] **M1 - Tarea 2:** Integración de UI para registro de repositorios Git y gestión de worktrees en barra lateral izquierda.
-  - [ ] **M1 - Tarea 3:** Sincronización del ciclo de vida de pestañas de terminal asociadas a rutas reales de worktrees.
-  - [ ] **M1 - Tarea 4:** Panel inspector lateral derecho (explorador de archivos, estado de Git y visor de diffs de solo lectura).
-  - [ ] **M1 - Tarea 5:** Validación E2E de criterios `AC-M1-01` a `AC-M1-08` y consolidación de resultados en `docs/milestones/m1-results.md`.
+  - [x] **M1 - Tarea 1 Completada:** Servicio nativo de Git en Rust (`src-tauri/src/git.rs`; 8 comandos Tauri registrados en esta tarea, 9 con `git_read_file` añadido después en la Tarea 4; 43 tests, incluidos de integración contra `git` real, que exigen `git` en el PATH). Notas y desviaciones en el plan activo.
+  - [x] **M1 - Tarea 2 Completada:** Integración de UI para registro de repositorios Git y gestión de worktrees en barra lateral izquierda (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, componentes modales y `WorktreeList.svelte`). Verificación manual **parcial** y deuda conocida: ver la sección "Task 2 review and manual pass" del plan activo.
+  - ✅ **Decisión tomada (caché de worktrees):** SQLite guarda solo la referencia del proyecto (id, nombre, ruta) y la selección; los worktrees se leen siempre de Git, sin caché. La lógica está en `src/lib/project-logic.ts` y se prueba con `npm run test:unit`. La Tarea 3 debe enlazar pestañas con la ruta del worktree que informa Git.
+  - [x] **M1 - Tarea 3 Completada:** pestañas enlazadas a la ruta del worktree que informa Git (`findTabForWorktree` en `project-logic.ts`; abrir terminal enfoca la pestaña existente; botón deshabilitado en worktrees prunable; `pty_create` falla si el cwd no existe). Revisión manual (`pwd` y reinicio en frío) dada por hecha por el usuario.
+  - [x] **M1 - Tarea 4 Completada:** panel inspector derecho (`InspectorPanel`, `GitStatusView`, `DiffViewer`, `FileTree`) con sondeo cada 2,5 s; estado Git agrupado por carpetas, archivos y diffs abiertos como pestañas de solo lectura en el centro (`FileViewer`, `git_read_file`), paneles redimensionables y atajos Cmd+B / Cmd+L. Revisión manual dada por hecha por el usuario.
+  - [x] **M1 - Tarea 5 Completada:** criterios `AC-M1-01` a `AC-M1-08` validados manualmente por el usuario; `npm run check`, `build`, `test:unit` (16) y `cargo test` (43) pasan. Resultados en `docs/milestones/m1-results.md`.
 
 ---
 
@@ -80,9 +82,11 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
 | Instalar dependencias frontend | `npm install` |
 | Verificación de tipos y linting | `npm run check` |
 | Compilación del frontend | `npm run build` |
+| Tests unitarios de la lógica del frontend | `npm run test:unit` (runner integrado de Node, sin dependencias; ejecuta TypeScript de forma nativa, probado con Node 22.23: en versiones anteriores puede fallar) |
 | Verificación rápida de Rust | `cargo check --manifest-path src-tauri/Cargo.toml` |
 | Compilación de Rust en debug | `cargo build --manifest-path src-tauri/Cargo.toml` |
 | Ejecución en modo desarrollo | `npm run tauri dev` |
+| Repo desechable para la pasada manual de M1 | `scripts/m1-sandbox/setup.sh` (guía: `docs/milestones/m1-manual-pass.md`) |
 
 ---
 

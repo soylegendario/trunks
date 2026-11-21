@@ -30,6 +30,7 @@ Milestone 1 implements the foundational **P0** functional requirements and the f
    - Inspect files within the active worktree (directory tree navigation without blocking the UI thread).
    - Display staged, unstaged, and untracked file status via `git status --porcelain=v2`.
    - Provide a lightweight, read-only diff viewer (`git diff` and `git diff --cached`).
+   - Files and diffs selected in the inspector open as read-only tabs in the centre workspace (via `git_read_file` for file contents); no editing.
 
 ---
 

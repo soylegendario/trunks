@@ -21,7 +21,7 @@ Based on the results recorded in [`docs/milestones/m0-results.md`](../milestones
 | Terminal emulator | `@xterm/xterm` (5.5) + `@xterm/addon-fit` | Handles ANSI colors, Unicode, mouse events, resize coordination, and interactive TUIs (`top`, `less`, `vim`) | **Adopted** |
 | PTY subsystem | `portable-pty` (0.8) | Cross-platform PTY management, async non-blocking output streaming via background threads | **Adopted** |
 | Git operations | System Git CLI | Single source of truth for repository discovery and worktree management without shadow databases | **Adopted** |
-| Workspace metadata | SQLite via `rusqlite` (0.32 bundled, WAL mode) | Transactional, crash-tolerant atomic persistence of tabs, layout, and worktrees with load-time path reconciliation | **Adopted** |
+| Workspace metadata | SQLite via `rusqlite` (0.32 bundled, WAL mode) | Transactional, crash-tolerant atomic persistence of tabs, layout, registered project references and the selection, with load-time path reconciliation. Amended in M1: worktrees are always read live from Git and are not persisted or cached | **Adopted** |
 | Visual scrollback | DOM-retained buffer / Cold restart banner | Running tabs maintain active scrollback buffer; restored cold tabs display a clear restart banner without ghost shells | **Adopted baseline** (bounded historical snapshot evaluation deferred to P1) |
 
 ## Consequences and Principles

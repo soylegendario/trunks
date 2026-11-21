@@ -11,9 +11,20 @@ This repository is developed cooperatively across multiple AI agents (Junie, Cod
 ## Current stage
 
 - **Milestone 0 (Terminal & Workspace Spike):** **COMPLETED.** The core architecture (Tauri 2, Svelte 5, Rust, `@xterm/xterm`, `portable-pty`, and SQLite in WAL mode) has been empirically validated on macOS and accepted in [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md) with evaluation results recorded in [`docs/milestones/m0-results.md`](docs/milestones/m0-results.md).
-- **Milestone 1 (Worktree-First Project Workflow & Real Git Integration):** **ACTIVE.**
+- **Milestone 1 (Worktree-First Project Workflow & Real Git Integration):** **COMPLETED.** Results in [`docs/milestones/m1-results.md`](docs/milestones/m1-results.md).
   - **Goal:** Register real local Git repositories, discover and manage worktrees via the system Git CLI, associate interactive PTY terminals with actual worktree directories, and inspect read-only file status and diffs.
-  - **Next Objective:** Task 1 — Implement the approved native Git backend design in Rust (`src-tauri/src/git.rs`); see [`M1 Git Backend Design`](docs/superpowers/specs/2026-11-21-m1-git-backend-design.md) and the [active plan](docs/superpowers/plans/2026-11-21-m1-git-worktrees.md).
+  - **Done:**
+    - Task 1 — native Git backend in Rust (`src-tauri/src/git.rs`, eight Tauri commands registered, 43 tests passing).
+    - Task 2 — project registration and worktree management UI (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, modals and sidebar `WorktreeList.svelte`).
+    - Task 3 — tabs bound to Git-reported worktree paths (open-or-focus, missing-directory guard). Code and unit tests done; manual review accepted as done.
+  - **Task 4 done:** read-only right-side inspector (Git status grouped by folder, file tree); files and diffs open as read-only centre tabs; panels are resizable and toggled with Cmd+B / Cmd+L. Manual review accepted as done.
+  - **What the app does today:**
+    - Projects sidebar (left): register local Git projects, list and create/remove worktrees, with a green dot when a worktree has running terminals and an orange dot when it only has restored (stopped) ones.
+    - Multiple terminals per worktree; selecting a worktree shows only its terminals and file/diff tabs. Terminals stay alive when hidden.
+    - Inspector (right): Git status grouped in collapsible folders (staged / changes, individual files of new folders) and a lazy file tree. Selecting a file or diff opens a read-only tab in the centre area.
+    - Both side panels are resizable (state kept in `localStorage`) and toggled from VS Code-style header icons or with Cmd+B (projects) and Cmd+L (inspector).
+  - **Task 5 done:** `AC-M1-01`..`AC-M1-08` validated manually, build and tests pass.
+  - **Next Objective:** plan Milestone 2.
 
 Start with:
 

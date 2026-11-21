@@ -5,20 +5,90 @@
   import {
     getWorkspaceState,
     saveLayout,
-    saveProjects,
     saveTabs,
-    upsertTab,
     deleteTab,
-    type ProjectItem,
-    type WorktreeItem,
     type TerminalTabItem,
-    type WorkspaceState,
   } from "$lib/storage";
+  import { projectStore } from "$lib/projects.svelte";
+  import { findTabForWorktree, tabsForWorktree } from "$lib/project-logic";
   import TerminalView from "$lib/TerminalView.svelte";
+  import WorktreeList from "$lib/components/WorktreeList.svelte";
+  import InspectorPanel from "$lib/components/InspectorPanel.svelte";
+  import FileViewer from "$lib/components/FileViewer.svelte";
+
+  type FileTab = {
+    id: string;
+    worktreePath: string;
+    path: string;
+    mode: "file" | "diff";
+    cached: boolean;
+  };
+  // Read-only file/diff tabs (not persisted across restarts).
+  let fileTabs = $state<FileTab[]>([]);
+  let activeFileId = $state("");
+  let visibleFileTabs = $derived(
+    fileTabs.filter((f) => f.worktreePath === projectStore.selectedWorktreePath)
+  );
+  let activeFile = $derived(visibleFileTabs.find((f) => f.id === activeFileId) ?? null);
+
+  function openFileTab(path: string, mode: "file" | "diff", cached: boolean) {
+    const wt = projectStore.selectedWorktreePath;
+    if (!wt) return;
+    const id = `${wt}|${mode}|${cached ? 1 : 0}|${path}`;
+    if (!fileTabs.some((f) => f.id === id)) {
+      fileTabs = [...fileTabs, { id, worktreePath: wt, path, mode, cached }];
+    }
+    activeFileId = id;
+  }
+
+  function closeFileTab(id: string, event?: Event) {
+    event?.stopPropagation();
+    fileTabs = fileTabs.filter((f) => f.id !== id);
+    if (activeFileId === id) {
+      activeFileId = "";
+      requestAnimationFrame(() => sessions.get(activeTabId)?.fit());
+    }
+  }
 
   let showLeft = $state(true);
   let showRight = $state(true);
   let centerWidth = $state(0);
+  const MIN_SIDE = 200;
+  const MAX_SIDE = 700;
+  function loadWidth(key: string, fallback: number) {
+    try {
+      const v = Number(localStorage.getItem(key));
+      return v >= MIN_SIDE && v <= MAX_SIDE ? v : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  let leftWidth = $state(loadWidth("trunks.leftWidth", 300));
+  let rightWidth = $state(loadWidth("trunks.rightWidth", 320));
+
+  function startResize(side: "left" | "right", e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = side === "left" ? leftWidth : rightWidth;
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const w = Math.min(MAX_SIDE, Math.max(MIN_SIDE, startW + (side === "left" ? dx : -dx)));
+      if (side === "left") leftWidth = w;
+      else rightWidth = w;
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("resizing");
+      try {
+        localStorage.setItem("trunks.leftWidth", String(leftWidth));
+        localStorage.setItem("trunks.rightWidth", String(rightWidth));
+      } catch {}
+    };
+    document.body.classList.add("resizing");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
   let centerHeight = $state(0);
   let centerElement = $state<HTMLElement | null>(null);
 
@@ -29,57 +99,37 @@
   let dbStatus = $state<string>("Connecting to SQLite...");
   let isLoaded = $state(false);
 
-  // Acceptance Checklist State
-  let checklist = $state({
-    ac1: false, // Shell startup & expected PWD
-    ac2: false, // Echo/input, Ctrl-C, ANSI colors, Unicode, scrollback
-    ac3: false, // Full-screen interactive TUI (top/less/vim)
-    ac4: false, // Resize redraw without restarting process
-    ac5: false, // 2 simultaneous sessions in separate worktrees
-    ac6: false, // Incremental persistence & crash recovery
-    ac7: false, // Restored tabs marked as stopped (no ghost PTY)
-    ac8: false, // Stale/removed worktree detection & labeling
+  // Only the tabs of the selected worktree are shown; with no selection, all of them.
+  let visibleTabs = $derived(
+    projectStore.selectedWorktreePath
+      ? tabsForWorktree(tabs, projectStore.selectedWorktreePath)
+      : tabs
+  );
+
+  $effect(() => {
+    if (!isLoaded) return;
+    if (visibleTabs.some((t) => t.id === activeTabId)) return;
+    const next = visibleTabs[visibleTabs.length - 1]?.id ?? "";
+    activeTabId = next;
+    persistLayoutState();
+    if (next) {
+      requestAnimationFrame(() => {
+        const s = sessions.get(next);
+        s?.fit();
+        s?.terminal.focus();
+      });
+    }
   });
 
-  // Example Project & Worktrees state synced with SQLite
-  let projects = $state<ProjectItem[]>([
-    {
-      id: "proj-trunks-spike",
-      name: "Trunks Workspace (M0 Spike)",
-      path: "/tmp/trunks-spike",
-      is_stale: false,
-      stale_reason: null,
-      worktrees: [
-        {
-          id: "wt-main",
-          project_id: "proj-trunks-spike",
-          name: "main",
-          branch: "main",
-          path: "/tmp/trunks-spike/wt-main",
-          is_stale: false,
-          stale_reason: null,
-        },
-        {
-          id: "wt-feat",
-          project_id: "proj-trunks-spike",
-          name: "feature-recovery",
-          branch: "feat/sqlite-recovery",
-          path: "/tmp/trunks-spike/wt-feat",
-          is_stale: false,
-          stale_reason: null,
-        },
-        {
-          id: "wt-unicode",
-          project_id: "proj-trunks-spike",
-          name: "unicode-path",
-          branch: "feat/unicode-ñ",
-          path: "/tmp/trunks-spike/wt-espacio y acento ñ",
-          is_stale: false,
-          stale_reason: null,
-        },
-      ],
-    },
-  ]);
+  // M1 Acceptance Checklist State
+  let checklist = $state({
+    ac1: false, // AC-M1-01: Local Git project registration
+    ac2: false, // AC-M1-02: Worktree discovery & branch parsing
+    ac3: false, // AC-M1-03: Worktree creation (git worktree add)
+    ac4: false, // AC-M1-04: Terminal tab spawning in worktree PWD
+    ac5: false, // AC-M1-05: External CLI synchronization & refresh
+    ac6: false, // AC-M1-06: Guarded worktree removal & force flag
+  });
 
   async function persistLayoutState() {
     if (!isLoaded) return;
@@ -88,8 +138,8 @@
         show_left: showLeft,
         show_right: showRight,
         active_tab_id: activeTabId || null,
-        selected_project_name: null,
-        selected_worktree_name: null,
+        selected_project_name: projectStore.selectedProjectId,
+        selected_worktree_name: projectStore.selectedWorktreePath,
       });
     } catch (err) {
       console.error("Failed to save layout:", err);
@@ -115,15 +165,6 @@
     }
   }
 
-  async function persistProjectsState() {
-    if (!isLoaded) return;
-    try {
-      await saveProjects(projects);
-    } catch (err) {
-      console.error("Failed to save projects:", err);
-    }
-  }
-
   function toggleLeft() {
     showLeft = !showLeft;
     persistLayoutState();
@@ -134,7 +175,12 @@
     persistLayoutState();
   }
 
-  async function createTab(cwd?: string, title?: string, worktreeName?: string) {
+  async function createTab(
+    cwd?: string,
+    title?: string,
+    worktreeName?: string,
+    projectName?: string
+  ) {
     const id = "tab-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
     const tabTitle = title || `Terminal ${tabs.length + 1}`;
     const tabCwd = cwd || systemInfo?.home_dir || "";
@@ -143,7 +189,7 @@
       id,
       title: tabTitle,
       cwd: tabCwd,
-      projectName: "Trunks Workspace",
+      projectName: projectName || "Trunks Workspace",
       worktreeName: worktreeName || "default",
       status: "running",
       isRestored: false,
@@ -169,6 +215,46 @@
     });
   }
 
+  function selectedWorktreeContext() {
+    const path = projectStore.selectedWorktreePath;
+    if (!path) return null;
+    const project = projectStore.projects.find((p) => p.id === projectStore.selectedProjectId);
+    const wt = project?.worktrees.find((w) => w.path === path);
+    const name = wt?.branch || path.split(/[\\/]/).pop() || "worktree";
+    return { path, name, projectName: project?.name || "Trunks Workspace" };
+  }
+
+  /** Opens an additional terminal in the selected worktree (or home when none is selected). */
+  async function newTerminalInSelection() {
+    const ctx = selectedWorktreeContext();
+    if (!ctx) {
+      await createTab();
+      return;
+    }
+    const n = tabsForWorktree(tabs, ctx.path).length;
+    const title = n === 0 ? `wt:${ctx.name}` : `wt:${ctx.name} ${n + 1}`;
+    await createTab(ctx.path, title, ctx.name, ctx.projectName);
+  }
+
+  /** Selects the worktree and focuses its terminal, creating the first one if it has none. */
+  async function openOrFocusWorktreeTab(
+    cwd: string,
+    title: string,
+    worktreeName: string,
+    projectName: string
+  ) {
+    const project = projectStore.projects.find((p) => p.name === projectName);
+    if (project) projectStore.selectedProjectId = project.id;
+    projectStore.selectedWorktreePath = cwd;
+
+    const existing = findTabForWorktree(tabs, cwd);
+    if (existing) {
+      selectTab(existing.id);
+      return;
+    }
+    await createTab(cwd, title, worktreeName, projectName);
+  }
+
   async function closeTab(id: string, event?: Event) {
     if (event) event.stopPropagation();
     const session = sessions.get(id);
@@ -181,11 +267,8 @@
     tabs = remaining;
 
     if (activeTabId === id) {
-      if (remaining.length > 0) {
-        activeTabId = remaining[remaining.length - 1].id;
-      } else {
-        activeTabId = "";
-      }
+      // The effect on visibleTabs picks the next tab of the selected worktree.
+      activeTabId = "";
     }
 
     await deleteTab(id).catch(console.error);
@@ -220,6 +303,7 @@
   }
 
   function selectTab(id: string) {
+    activeFileId = "";
     activeTabId = id;
     persistLayoutState();
     requestAnimationFrame(() => {
@@ -237,91 +321,16 @@
     }
   }
 
-  // Acceptance Test Helpers
-  async function reloadWorkspaceFromDatabase() {
-    dbStatus = "Reloading state from SQLite...";
-    try {
-      const state = await getWorkspaceState();
-      
-      // Update layout
-      showLeft = state.layout.show_left;
-      showRight = state.layout.show_right;
-
-      // Update projects with reconciled stale flags
-      if (state.projects && state.projects.length > 0) {
-        projects = state.projects;
-      }
-
-      // Dispose existing sessions
-      for (const s of sessions.values()) {
-        await s.destroy();
-      }
-      sessions.clear();
-
-      // Restore tabs as stopped / restored tabs
-      const restoredTabs: TerminalTab[] = [];
-      for (const t of state.tabs) {
-        const tabData: TerminalTab = {
-          id: t.id,
-          title: t.title,
-          cwd: t.cwd,
-          projectName: t.project_name || undefined,
-          worktreeName: t.worktree_name || undefined,
-          status: "stopped",
-          isRestored: true,
-          isStale: t.is_stale,
-          staleReason: t.stale_reason || undefined,
-          tabOrder: t.tab_order,
-        };
-
-        const session = new TerminalSession(tabData, (newStatus) => {
-          const idx = tabs.findIndex((tab) => tab.id === t.id);
-          if (idx !== -1) {
-            tabs[idx].status = newStatus;
-          }
-        });
-
-        sessions.set(t.id, session);
-        restoredTabs.push(tabData);
-      }
-
-      tabs = restoredTabs;
-      if (state.layout.active_tab_id && sessions.has(state.layout.active_tab_id)) {
-        activeTabId = state.layout.active_tab_id;
-      } else if (restoredTabs.length > 0) {
-        activeTabId = restoredTabs[0].id;
-      } else {
-        activeTabId = "";
-      }
-
-      dbStatus = `Restored ${tabs.length} tabs, ${projects.length} projects (WAL mode)`;
-    } catch (err) {
-      dbStatus = `Failed to reload from DB: ${err}`;
-      console.error(err);
-    }
-  }
-
-  function addStaleWorktreeFixture() {
-    const staleWt: WorktreeItem = {
-      id: "wt-stale-" + Date.now(),
-      project_id: projects[0]?.id || "proj-trunks-spike",
-      name: "deleted-external-wt",
-      branch: "feat/orphaned-branch",
-      path: "/tmp/non_existent_deleted_worktree_" + Date.now(),
-      is_stale: true,
-      stale_reason: "Worktree directory was moved or removed outside Trunks",
-    };
-
-    if (projects.length > 0) {
-      projects[0].worktrees.push(staleWt);
-      projects = [...projects];
-      persistProjectsState();
-    }
-  }
-
   let resizeObserver: ResizeObserver | null = null;
 
+  function handleWindowFocus() {
+    // On-focus automatic refresh of worktrees from system Git CLI
+    projectStore.refreshAll();
+  }
+
   onMount(() => {
+    window.addEventListener("focus", handleWindowFocus);
+
     (async () => {
       try {
         systemInfo = await invoke<SystemInfo>("get_system_info");
@@ -329,21 +338,17 @@
         console.error("Failed to get system info:", err);
       }
 
-      // Initialize database and load persisted workspace state
+      // Initialize project store (SQLite + Git discovery)
+      await projectStore.init();
+
+      // Initialize database and load persisted workspace layout & tabs
       try {
         const state = await getWorkspaceState();
         showLeft = state.layout.show_left;
         showRight = state.layout.show_right;
 
-        if (state.projects && state.projects.length > 0) {
-          projects = state.projects;
-        } else {
-          // Save initial default project fixtures to SQLite
-          await persistProjectsState();
-        }
-
         if (state.tabs && state.tabs.length > 0) {
-          // Restore tabs as stopped / restored tabs (AC-M0-07)
+          // Restore tabs as stopped / restored tabs (AC-M0-07 / AC-M1-04)
           const restoredTabs: TerminalTab[] = [];
           for (const t of state.tabs) {
             const tabData: TerminalTab = {
@@ -376,7 +381,7 @@
           } else {
             activeTabId = restoredTabs[0]?.id || "";
           }
-          dbStatus = `Restored ${tabs.length} tabs from SQLite (Crash Resilient)`;
+          dbStatus = `Restored ${tabs.length} tabs from SQLite`;
         } else {
           // First time launch: create default tab
           await createTab(undefined, "Terminal 1", "main");
@@ -410,10 +415,27 @@
     }
 
     return () => {
+      window.removeEventListener("focus", handleWindowFocus);
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
     };
+  });
+
+  onMount(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "b") {
+        e.preventDefault();
+        toggleLeft();
+      } else if (k === "l") {
+        e.preventDefault();
+        toggleRight();
+      }
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   });
 
   onDestroy(async () => {
@@ -427,104 +449,66 @@
 <div class="app-container">
   <header class="app-header">
     <div class="header-left">
-      <button class="toggle-btn" class:active={showLeft} onclick={toggleLeft} title="Toggle Projects Sidebar">
-        {showLeft ? "◀ Sidebar" : "▶ Sidebar"}
+      <button
+        class="toggle-btn"
+        class:active={showLeft}
+        onclick={toggleLeft}
+        title="Toggle Projects Sidebar (⌘B)"
+        aria-label="Toggle Projects Sidebar"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+          <line x1="6" y1="2.75" x2="6" y2="13.25" />
+          {#if showLeft}<rect x="2" y="3" width="4" height="10" fill="currentColor" stroke="none" />{/if}
+        </svg>
       </button>
       <span class="app-title">Trunks</span>
-      <span class="badge">Milestone 0 Spike</span>
-      <span class="db-badge" title="SQLite Transactional Store">SQLite: WAL</span>
     </div>
-    <div class="header-center">
-      <span class="dimension-indicator">Center Area: {centerWidth}px × {centerHeight}px</span>
-      {#if systemInfo}
-        <span class="os-indicator">OS: {systemInfo.os} ({systemInfo.default_shell})</span>
-      {/if}
-    </div>
+    <div class="header-center"></div>
     <div class="header-right">
-      <button class="toggle-btn" class:active={showRight} onclick={toggleRight} title="Toggle Acceptance Checklist">
-        {showRight ? "Checklist ▶" : "◀ Checklist"}
+      <button
+        class="toggle-btn"
+        class:active={showRight}
+        onclick={toggleRight}
+        title="Toggle Inspector Sidebar (⌘L)"
+        aria-label="Toggle Inspector Sidebar"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+          <line x1="10" y1="2.75" x2="10" y2="13.25" />
+          {#if showRight}<rect x="10" y="3" width="4" height="10" fill="currentColor" stroke="none" />{/if}
+        </svg>
       </button>
     </div>
   </header>
 
   <div class="app-body">
     {#if showLeft}
-      <aside class="panel left-panel">
-        <div class="panel-header">
-          <h3>Projects &amp; Worktrees</h3>
-        </div>
-        <div class="panel-content">
-          {#each projects as project}
-            <div class="project-card" class:stale={project.is_stale}>
-              <div class="project-header">
-                <span class="project-icon">📁</span>
-                <span class="project-name">{project.name}</span>
-                {#if project.is_stale}
-                  <span class="stale-tag" title={project.stale_reason || "Directory missing"}>⚠️ Stale</span>
-                {/if}
-              </div>
-              <div class="worktrees-list">
-                <div class="section-label">Git Worktrees:</div>
-                {#each project.worktrees as wt}
-                  <div class="worktree-item" class:stale={wt.is_stale}>
-                    <div class="worktree-info">
-                      <div class="worktree-title-row">
-                        <span class="branch-icon">⎇</span>
-                        <span class="worktree-branch">{wt.branch || wt.name}</span>
-                        {#if wt.is_stale}
-                          <span class="stale-tag" title={wt.stale_reason || "Worktree path missing on disk"}>⚠️ Stale Path</span>
-                        {/if}
-                      </div>
-                      <span class="worktree-path" title={wt.path}>{wt.path}</span>
-                    </div>
-                    <button
-                      class="open-btn"
-                      onclick={() => createTab(wt.path, `wt:${wt.name}`, wt.name)}
-                      title="Open Terminal in this worktree"
-                    >
-                      + Terminal
-                    </button>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/each}
-
-          <div class="custom-action-box">
-            <h4>Quick Launch</h4>
-            <button
-              class="action-btn"
-              onclick={() => createTab("/tmp", "wt:temp", "temp")}
-            >
-              + Launch in /tmp
-            </button>
-            <button
-              class="action-btn"
-              onclick={() => createTab("/tmp/trunks-spike/wt-espacio y acento ñ", "wt:unicode", "unicode-ñ")}
-            >
-              + Launch with spaces &amp; ñ
-            </button>
-            <button
-              class="action-btn warning"
-              onclick={addStaleWorktreeFixture}
-              title="Add a non-existent worktree path to test AC-M0-08 stale detection"
-            >
-              + Add Stale Worktree (AC-M0-08)
-            </button>
-          </div>
-        </div>
+      <aside class="panel left-panel" style:width="{leftWidth}px">
+        <WorktreeList
+          onOpenTerminal={openOrFocusWorktreeTab}
+          runningTerminals={(path) =>
+            tabsForWorktree(tabs, path).filter((t) => t.status === "running").length}
+          restoredTerminals={(path) =>
+            tabsForWorktree(tabs, path).filter(
+              (t) => t.isRestored && t.status === "stopped"
+            ).length}
+          onSelectWorktree={() => persistLayoutState()}
+        />
       </aside>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="resizer" onpointerdown={(e) => startResize("left", e)}></div>
     {/if}
 
     <main class="panel center-panel" bind:this={centerElement}>
       <div class="panel-header center-header">
         <div class="tabs-bar">
-          {#each tabs as tab (tab.id)}
+          {#each visibleTabs as tab (tab.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="tab"
-              class:active={activeTabId === tab.id}
+              class:active={activeTabId === tab.id && !activeFile}
               class:is-restored={tab.isRestored}
               class:is-stale={tab.isStale}
               onclick={() => selectTab(tab.id)}
@@ -535,8 +519,10 @@
                 class:stopped={tab.status === "stopped"}
                 class:restored={tab.isRestored}
               ></span>
-              <span class="tab-title">{tab.title}</span>
-              
+              <span class="tab-title" title={`${tab.projectName || ""} › ${tab.title} (${tab.cwd})`}>
+                {tab.title}
+              </span>
+
               {#if tab.isRestored && tab.status === "stopped"}
                 <span class="tab-badge restored" title="Restored workspace identity (No ghost process)">
                   restored
@@ -552,7 +538,11 @@
                   ▶ Start
                 </button>
               {:else}
-                <span class="tab-badge" class:running={tab.status === "running"} class:stopped={tab.status === "stopped"}>
+                <span
+                  class="tab-badge"
+                  class:running={tab.status === "running"}
+                  class:stopped={tab.status === "stopped"}
+                >
                   {tab.status}
                 </span>
                 {#if tab.status === "stopped"}
@@ -582,7 +572,24 @@
               </button>
             </div>
           {/each}
-          <button class="new-tab-btn" onclick={() => createTab()} title="Open new terminal tab">
+          {#each visibleFileTabs as f (f.id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="tab"
+              class:active={activeFileId === f.id}
+              onclick={() => (activeFileId = f.id)}
+            >
+              <span class="file-ico">{f.mode === "diff" ? "±" : "▤"}</span>
+              <span class="tab-title" title={f.path}>{f.path.split("/").pop()}</span>
+              <button class="tab-close-btn" onclick={(e) => closeFileTab(f.id, e)} title="Close">×</button>
+            </div>
+          {/each}
+          <button
+            class="new-tab-btn"
+            onclick={newTerminalInSelection}
+            title="Open a new terminal in the selected worktree"
+          >
             +
           </button>
         </div>
@@ -592,636 +599,363 @@
       </div>
 
       <div class="panel-content center-content">
-        {#if tabs.length === 0}
+        {#if visibleTabs.length === 0 && !activeFile}
           <div class="empty-state">
-            <p>No active terminal sessions.</p>
-            <button class="action-btn primary" onclick={() => createTab()}>
+            <p>No terminals in this worktree.</p>
+            <button class="action-btn primary" onclick={newTerminalInSelection}>
               + Open Terminal
             </button>
           </div>
-        {:else}
-          {#each tabs as tab (tab.id)}
-            {@const session = sessions.get(tab.id)}
-            {#if session}
-              <TerminalView {session} isActive={activeTabId === tab.id} />
-            {/if}
-          {/each}
+        {/if}
+        {#each tabs as tab (tab.id)}
+          {@const session = sessions.get(tab.id)}
+          {#if session}
+            <TerminalView {session} isActive={activeTabId === tab.id && !activeFile} />
+          {/if}
+        {/each}
+        {#if activeFile}
+          <div class="file-overlay">
+            {#key activeFile.id}
+              <FileViewer
+                worktreePath={activeFile.worktreePath}
+                path={activeFile.path}
+                mode={activeFile.mode}
+                cached={activeFile.cached}
+              />
+            {/key}
+          </div>
         {/if}
       </div>
     </main>
 
     {#if showRight}
-      <aside class="panel right-panel">
-        <div class="panel-header">
-          <h3>M0 Acceptance Checklist</h3>
-        </div>
-        <div class="panel-content checklist-content">
-          <div class="checklist-section">
-            <h4>PTY &amp; Terminal Fidelity (Task 2)</h4>
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac1} />
-                <span><strong>AC-M0-01:</strong> Shell starts in expected worktree PWD</span>
-              </label>
-              <button class="test-helper-btn" onclick={() => sendQuickCommand("pwd && echo 'AC-M0-01 OK'")}>
-                Test PWD
-              </button>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac2} />
-                <span><strong>AC-M0-02:</strong> Input, Ctrl-C, ANSI &amp; Unicode fidelity</span>
-              </label>
-              <button
-                class="test-helper-btn"
-                onclick={() =>
-                  sendQuickCommand(
-                    "echo -e '\\033[32m[OK]\\033[0m ANSI Color test | \\033[34m[INFO]\\033[0m Unicode: 🚀 ñ á é í ó ú 🦀 中文'"
-                  )}
-              >
-                Test ANSI/Unicode
-              </button>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac3} />
-                <span><strong>AC-M0-03:</strong> Fullscreen TUI (top / less / vim)</span>
-              </label>
-              <button class="test-helper-btn" onclick={() => sendQuickCommand("top")}>
-                Launch top
-              </button>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac4} />
-                <span><strong>AC-M0-04:</strong> Resize redraws active process</span>
-              </label>
-              <span class="hint-text">Toggle sidebars to resize center area.</span>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac5} />
-                <span><strong>AC-M0-05:</strong> 2+ simultaneous sessions alive</span>
-              </label>
-              <button
-                class="test-helper-btn"
-                onclick={async () => {
-                  await createTab("/tmp/trunks-spike/wt-main", "Tab A (wt-main)", "wt-main");
-                  await createTab("/tmp/trunks-spike/wt-feat", "Tab B (wt-feat)", "wt-feat");
-                }}
-              >
-                Spawn 2 Sessions
-              </button>
-            </div>
-          </div>
-
-          <div class="checklist-section">
-            <h4>Persistence &amp; Recovery (Task 3)</h4>
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac6} />
-                <span><strong>AC-M0-06:</strong> Incremental SQLite persistence &amp; crash recovery</span>
-              </label>
-              <button class="test-helper-btn primary-action" onclick={reloadWorkspaceFromDatabase}>
-                Simulate Relaunch
-              </button>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac7} />
-                <span><strong>AC-M0-07:</strong> Restored tabs marked as stopped (no ghost PTYs)</span>
-              </label>
-              <span class="hint-text">Restored tabs show <code>restored</code> badge and require clicking ▶ Start.</span>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac8} />
-                <span><strong>AC-M0-08:</strong> Stale/removed path reconciliation</span>
-              </label>
-              <button class="test-helper-btn" onclick={addStaleWorktreeFixture}>
-                Inject Stale WT
-              </button>
-            </div>
-          </div>
-
-          <div class="info-card">
-            <h4>Workspace Persistence State</h4>
-            <p>DB Status: <code>{dbStatus}</code></p>
-            <p>Active Tab: <code>{activeTabId || "None"}</code></p>
-            <p>Saved Tabs: <code>{tabs.length}</code> (Live: <code>{tabs.filter((t) => t.status === "running").length}</code>)</p>
-            <p>Saved Projects: <code>{projects.length}</code></p>
-          </div>
-        </div>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="resizer" onpointerdown={(e) => startResize("right", e)}></div>
+      <aside class="panel right-panel" style:width="{rightWidth}px">
+        <InspectorPanel worktreePath={projectStore.selectedWorktreePath} onOpenFile={openFileTab} />
       </aside>
     {/if}
   </div>
 </div>
 
 <style>
-  :global(body, html) {
+  :global(body) {
     margin: 0;
     padding: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: #1a1b26;
-    color: #c0caf5;
+    background-color: #11111b;
+    color: #cdd6f4;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  :global(*), :global(*::before), :global(*::after) {
+    box-sizing: border-box;
   }
 
   .app-container {
     display: flex;
     flex-direction: column;
-    width: 100vw;
     height: 100vh;
-    overflow: hidden;
+    width: 100vw;
   }
 
   .app-header {
+    height: 38px;
+    background-color: #181825;
+    border-bottom: 1px solid #313244;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 38px;
-    background-color: #16161e;
-    border-bottom: 1px solid #292e42;
     padding: 0 12px;
-    font-size: 13px;
-    user-select: none;
+    font-size: 12px;
+    z-index: 10;
   }
 
-  .header-left,
-  .header-right {
+  .header-left, .header-center, .header-right {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .header-center {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
   .app-title {
     font-weight: 700;
-    color: #7aa2f7;
-    margin-left: 4px;
+    font-size: 14px;
+    color: #cdd6f4;
+    letter-spacing: 0.5px;
   }
 
-  .badge {
-    background-color: #24283b;
-    color: #9ece6a;
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    border: 1px solid #414868;
-  }
-
-  .db-badge {
-    background-color: #1f2335;
-    color: #7dcfff;
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    border: 1px solid #2ac3de55;
-    font-family: monospace;
-  }
-
-  .dimension-indicator {
-    font-family: monospace;
-    font-size: 11px;
-    color: #7aa2f7;
-    background-color: #1f2335;
-    padding: 2px 6px;
-    border-radius: 3px;
-  }
-
-  .os-indicator {
-    font-size: 11px;
-    color: #565f89;
-  }
 
   .toggle-btn {
-    background-color: #24283b;
-    color: #a9b1d6;
-    border: 1px solid #414868;
-    padding: 4px 10px;
+    background: transparent;
+    border: none;
+    color: #a6adc8;
+    padding: 4px 6px;
     border-radius: 4px;
     font-size: 11px;
     cursor: pointer;
-    transition: background-color 0.15s, color 0.15s;
+    transition: all 0.15s ease;
   }
 
   .toggle-btn:hover {
-    background-color: #414868;
-    color: #c0caf5;
+    color: #cdd6f4;
   }
 
   .toggle-btn.active {
-    border-color: #7aa2f7;
-    color: #7aa2f7;
+    color: #cdd6f4;
   }
+
 
   .app-body {
     display: flex;
     flex: 1;
+    height: calc(100vh - 38px);
     overflow: hidden;
-    position: relative;
   }
 
   .panel {
     display: flex;
     flex-direction: column;
+    height: 100%;
     overflow: hidden;
-    background-color: #1a1b26;
+  }
+
+  .resizer {
+    width: 5px;
+    margin: 0 -2px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    z-index: 5;
+    background: transparent;
+  }
+
+  .resizer:hover,
+  :global(body.resizing) .resizer {
+    background: rgba(137, 180, 250, 0.4);
+  }
+
+  :global(body.resizing) {
+    cursor: col-resize;
   }
 
   .left-panel {
-    width: 280px;
-    min-width: 240px;
-    max-width: 380px;
-    border-right: 1px solid #292e42;
-    background-color: #16161e;
-  }
-
-  .right-panel {
-    width: 320px;
-    min-width: 260px;
-    max-width: 420px;
-    border-left: 1px solid #292e42;
-    background-color: #16161e;
+    flex-shrink: 0;
+    min-width: 200px;
+    background-color: #181825;
+    border-right: 1px solid #313244;
   }
 
   .center-panel {
     flex: 1;
-    min-width: 300px;
-    background-color: #1a1b26;
+    background-color: #11111b;
+    min-width: 320px;
+  }
+
+  .right-panel {
+    flex-shrink: 0;
+    min-width: 200px;
+    background-color: #181825;
+    border-left: 1px solid #313244;
   }
 
   .panel-header {
+    height: 38px;
+    background-color: #181825;
+    border-bottom: 1px solid #313244;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    height: 36px;
     padding: 0 12px;
-    border-bottom: 1px solid #24283b;
-    background-color: #1f2335;
-    user-select: none;
   }
 
-  .panel-header h3 {
-    margin: 0;
-    font-size: 12px;
-    font-weight: 600;
-    color: #a9b1d6;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
 
   .center-header {
     padding: 0;
-    height: 36px;
+    justify-content: space-between;
+    background-color: #11111b;
   }
 
-  .panel-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-  }
-
-  .center-content {
-    padding: 0;
-    overflow: hidden;
-    position: relative;
-    background-color: #1a1b26;
-  }
-
-  /* Tabs Bar */
   .tabs-bar {
     display: flex;
     align-items: center;
     height: 100%;
-    flex: 1;
     overflow-x: auto;
-    overflow-y: hidden;
+    scrollbar-width: none;
+    flex: 1;
+  }
+
+  .tabs-bar::-webkit-scrollbar {
+    display: none;
   }
 
   .tab {
     display: flex;
     align-items: center;
     gap: 6px;
+    padding: 0 12px;
     height: 100%;
-    padding: 0 10px;
-    background-color: #16161e;
-    border-right: 1px solid #24283b;
-    border-bottom: 2px solid transparent;
+    background-color: #181825;
+    border-right: 1px solid #313244;
+    color: #a6adc8;
     font-size: 12px;
-    color: #787c99;
     cursor: pointer;
-    user-select: none;
     white-space: nowrap;
-    transition: background-color 0.15s, color 0.15s;
+    transition: all 0.15s ease;
+    border-top: 2px solid transparent;
   }
 
   .tab:hover {
-    background-color: #1a1b26;
-    color: #c0caf5;
+    background-color: #1e1e2e;
+    color: #cdd6f4;
   }
 
   .tab.active {
-    background-color: #1a1b26;
-    color: #7aa2f7;
-    border-bottom: 2px solid #7aa2f7;
+    background-color: #11111b;
+    color: #89b4fa;
+    border-top: 2px solid #89b4fa;
     font-weight: 500;
   }
 
   .tab.is-restored {
-    border-left: 2px solid #bb9af7;
+    border-left: 2px dashed #f9e2af;
   }
 
   .tab.is-stale {
-    border-left: 2px solid #f7768e;
+    border-top: 2px solid #f9e2af;
   }
 
   .tab-status-dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background-color: #565f89;
+    background-color: #6c7086;
   }
 
   .tab-status-dot.running {
-    background-color: #9ece6a;
-    box-shadow: 0 0 4px #9ece6a;
+    background-color: #a6e3a1;
+    box-shadow: 0 0 6px #a6e3a1;
   }
 
   .tab-status-dot.stopped {
-    background-color: #e0af68;
+    background-color: #f38ba8;
   }
 
   .tab-status-dot.restored {
-    background-color: #bb9af7;
-  }
-
-  .tab-title {
-    max-width: 140px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    background-color: #f9e2af;
   }
 
   .tab-badge {
-    font-size: 10px;
+    font-size: 9px;
     padding: 1px 4px;
     border-radius: 3px;
-    background-color: #24283b;
-    color: #565f89;
+    background: #313244;
+    color: #a6adc8;
+    text-transform: uppercase;
   }
 
   .tab-badge.running {
-    color: #9ece6a;
+    background: rgba(166, 227, 161, 0.15);
+    color: #a6e3a1;
   }
 
   .tab-badge.stopped {
-    color: #e0af68;
+    background: rgba(243, 139, 168, 0.15);
+    color: #f38ba8;
   }
 
   .tab-badge.restored {
-    color: #bb9af7;
-    border: 1px solid #bb9af755;
+    background: rgba(249, 226, 175, 0.2);
+    color: #f9e2af;
+    border: 1px solid #f9e2af;
   }
 
-  .tab-start-btn {
-    background-color: #9ece6a22;
-    color: #9ece6a;
-    border: 1px solid #9ece6a66;
+  .tab-start-btn, .tab-restart-btn {
+    background: #89b4fa;
+    color: #11111b;
+    border: none;
+    padding: 1px 5px;
     border-radius: 3px;
     font-size: 10px;
-    padding: 1px 5px;
+    font-weight: bold;
     cursor: pointer;
-    font-weight: 600;
-  }
-
-  .tab-start-btn:hover {
-    background-color: #9ece6a44;
   }
 
   .tab-restart-btn {
-    background: none;
-    border: none;
-    color: #e0af68;
-    cursor: pointer;
-    font-size: 12px;
-    padding: 0 2px;
+    background: #45475a;
+    color: #cdd6f4;
+  }
+
+  .tab-start-btn:hover {
+    background: #b4befe;
   }
 
   .tab-restart-btn:hover {
-    color: #9ece6a;
+    background: #585b70;
   }
 
   .tab-stale-badge {
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .tab-close-btn {
-    background: none;
+    background: transparent;
     border: none;
-    color: #565f89;
-    cursor: pointer;
+    color: #6c7086;
     font-size: 14px;
+    cursor: pointer;
     padding: 0 2px;
+    border-radius: 3px;
     line-height: 1;
-    border-radius: 2px;
   }
 
   .tab-close-btn:hover {
-    color: #f7768e;
-    background-color: #24283b;
+    background: rgba(243, 139, 168, 0.2);
+    color: #f38ba8;
   }
 
   .new-tab-btn {
-    background: none;
+    background: transparent;
     border: none;
-    color: #7aa2f7;
+    color: #a6adc8;
     font-size: 16px;
     padding: 0 10px;
     height: 100%;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .new-tab-btn:hover {
-    background-color: #24283b;
+    background-color: #181825;
+    color: #89b4fa;
   }
 
   .center-metrics {
     padding: 0 12px;
-    font-size: 11px;
     font-family: monospace;
-    color: #565f89;
-  }
-
-  /* Project Card & Worktree list */
-  .project-card {
-    background-color: #1f2335;
-    border: 1px solid #292e42;
-    border-radius: 6px;
-    padding: 10px;
-    margin-bottom: 12px;
-  }
-
-  .project-card.stale {
-    border-color: #f7768e55;
-    background-color: #2a1f28;
-  }
-
-  .project-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 8px;
-    font-weight: 600;
-    font-size: 13px;
-    color: #c0caf5;
-  }
-
-  .stale-tag {
-    font-size: 10px;
-    background-color: #f7768e22;
-    color: #f7768e;
-    border: 1px solid #f7768e66;
-    padding: 1px 4px;
-    border-radius: 3px;
-    font-weight: normal;
-  }
-
-  .worktrees-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .section-label {
     font-size: 11px;
-    color: #565f89;
-    text-transform: uppercase;
-    font-weight: 600;
-    margin-bottom: 2px;
+    color: #6c7086;
   }
 
-  .worktree-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background-color: #16161e;
-    border: 1px solid #24283b;
-    border-radius: 4px;
-    padding: 6px 8px;
-    gap: 8px;
+  .panel-content {
+    flex: 1;
+    overflow-y: auto;
+    position: relative;
   }
 
-  .worktree-item.stale {
-    border-color: #f7768e55;
-    background-color: #221a22;
+  .center-content {
+    background-color: #11111b;
   }
 
-  .worktree-info {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    gap: 2px;
+  .file-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
   }
 
-  .worktree-title-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .branch-icon {
-    color: #bb9af7;
-    font-size: 12px;
-  }
-
-  .worktree-branch {
-    font-weight: 500;
-    font-size: 12px;
-    color: #7aa2f7;
-  }
-
-  .worktree-path {
-    font-family: monospace;
-    font-size: 10px;
-    color: #565f89;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .open-btn {
-    background-color: #24283b;
-    color: #9ece6a;
-    border: 1px solid #414868;
-    border-radius: 3px;
+  .file-ico {
     font-size: 11px;
-    padding: 3px 6px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .open-btn:hover {
-    background-color: #414868;
-    color: #73daca;
-  }
-
-  .custom-action-box {
-    margin-top: 16px;
-    background-color: #1f2335;
-    border: 1px dashed #414868;
-    border-radius: 6px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .custom-action-box h4 {
-    margin: 0 0 4px 0;
-    font-size: 11px;
-    color: #a9b1d6;
-    text-transform: uppercase;
-  }
-
-  .action-btn {
-    background-color: #24283b;
-    color: #c0caf5;
-    border: 1px solid #414868;
-    border-radius: 4px;
-    padding: 5px 8px;
-    font-size: 11px;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .action-btn:hover {
-    background-color: #414868;
-  }
-
-  .action-btn.primary {
-    background-color: #7aa2f7;
-    color: #15161e;
-    font-weight: 600;
-    border: none;
-    text-align: center;
-  }
-
-  .action-btn.warning {
-    color: #e0af68;
-    border-color: #e0af6855;
+    color: #89b4fa;
   }
 
   .empty-state {
@@ -1230,104 +964,36 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: #565f89;
+    color: #6c7086;
     gap: 12px;
   }
 
-  /* Checklist Panel */
-  .checklist-content {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  .checklist-section {
-    background-color: #1f2335;
-    border: 1px solid #292e42;
-    border-radius: 6px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .checklist-section h4 {
-    margin: 0;
-    font-size: 11px;
-    text-transform: uppercase;
-    color: #7aa2f7;
-    letter-spacing: 0.5px;
-  }
-
-  .checklist-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+  .action-btn {
+    background: #313244;
+    border: 1px solid #45475a;
+    color: #cdd6f4;
+    padding: 6px 12px;
+    border-radius: 4px;
     font-size: 12px;
-    gap: 8px;
-  }
-
-  .checklist-item label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    font-weight: 500;
     cursor: pointer;
-    flex: 1;
+    transition: all 0.15s ease;
   }
 
-  .test-helper-btn {
-    background-color: #24283b;
-    color: #7dcfff;
-    border: 1px solid #414868;
-    border-radius: 3px;
-    font-size: 10px;
-    padding: 2px 6px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .test-helper-btn:hover {
-    background-color: #414868;
-    color: #bb9af7;
-  }
-
-  .test-helper-btn.primary-action {
-    background-color: #7aa2f722;
-    border-color: #7aa2f766;
-    color: #7aa2f7;
+  .action-btn.primary {
+    background: #89b4fa;
+    color: #11111b;
+    border-color: #89b4fa;
     font-weight: 600;
   }
 
-  .hint-text {
-    font-size: 10px;
-    color: #565f89;
-    font-style: italic;
+  .action-btn:hover {
+    background: #45475a;
+    color: #89b4fa;
   }
 
-  .info-card {
-    background-color: #16161e;
-    border: 1px solid #292e42;
-    border-radius: 6px;
-    padding: 10px;
-    font-size: 11px;
-  }
-
-  .info-card h4 {
-    margin: 0 0 6px 0;
-    font-size: 11px;
-    color: #a9b1d6;
-    text-transform: uppercase;
-  }
-
-  .info-card p {
-    margin: 3px 0;
-    color: #787c99;
-  }
-
-  .info-card code {
-    color: #7aa2f7;
-    background-color: #1f2335;
-    padding: 1px 4px;
-    border-radius: 3px;
+  .action-btn.primary:hover {
+    background: #b4befe;
+    border-color: #b4befe;
   }
 </style>

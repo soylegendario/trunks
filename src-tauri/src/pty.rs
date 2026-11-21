@@ -98,9 +98,10 @@ pub fn pty_create(
 
     if let Some(ref dir) = cwd {
         let path = Path::new(dir);
-        if path.exists() {
-            cmd.cwd(path);
+        if !path.is_dir() {
+            return Err(format!("Working directory does not exist: {}", dir));
         }
+        cmd.cwd(path);
     }
 
     let child = pair
