@@ -118,6 +118,13 @@ export async function gitGetDiff(
 }
 
 /**
+ * Reads a text file inside a worktree (read-only viewer).
+ */
+export async function gitReadFile(worktreePath: string, filePath: string): Promise<string> {
+  return await invoke<string>("git_read_file", { worktreePath, filePath });
+}
+
+/**
  * Lists files in a directory inside a worktree (one level, protected against traversal).
  */
 export async function gitListFiles(

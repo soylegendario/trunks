@@ -190,11 +190,16 @@
 - Consumes: `git_get_status`, `git_get_diff`, `git_list_files` from active worktree.
 - Produces: Interactive inspector showing changed files and syntax-highlighted diffs.
 
-- [ ] Build the inspector tab switcher in the right panel (File Explorer / Git Status).
-- [ ] Implement `GitStatusView` displaying modified, staged, and untracked files with status indicators.
-- [ ] Implement `DiffViewer` rendering unified diffs with line additions/deletions highlighting for selected files.
-- [ ] Implement lightweight `FileTree` browsing the active worktree directory structure.
-- [ ] Ensure polling / refresh updates the status when commands run in the terminal.
+- [x] Build the inspector tab switcher in the right panel (File Explorer / Git Status).
+- [x] Implement `GitStatusView` displaying modified, staged, and untracked files with status indicators.
+- [x] Implement `DiffViewer` rendering unified diffs with line additions/deletions highlighting for selected files.
+- [x] Implement lightweight `FileTree` browsing the active worktree directory structure.
+- [x] Ensure polling / refresh updates the status when commands run in the terminal.
+
+**Task 4 implementation notes (2026-11-21; `npm run check` 0 errors, `npm run build` and `npm run test:unit` pass):**
+- `InspectorPanel.svelte` follows `projectStore.selectedWorktreePath`, with Git / Files tabs; it polls `git_get_status` every 2.5 s (skipped when the window is hidden) and on window focus. The right panel switches between Inspector and the M1 checklist.
+- `GitStatusView.svelte` lists staged and unstaged/untracked entries; clicking one loads `git_get_diff` (staged entries use `cached`), reloaded on every status refresh. `DiffViewer.svelte` colours add/del/hunk/meta lines. `FileTree.svelte` lazy-loads one level per folder through `git_list_files` and reloads on the poll tick.
+- **Not verified with the running app:** the three IPC commands (`git_get_status`, `git_get_diff`, `git_list_files`) have still not been exercised through Tauri; the status chars are assumed to use `.` for "none" (handled together with space). Diffs of binary/large untracked files surface the backend error. No frontend tests for the new components.
 
 ---
 

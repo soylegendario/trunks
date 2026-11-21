@@ -431,7 +431,7 @@ pub async fn git_get_status(worktree_path: String) -> Result<GitStatusResult, St
     // git commands for the index lock.
     let out = run_git(
         Path::new(&worktree_path),
-        &["--no-optional-locks", "status", "--porcelain=v2", "-z"],
+        &["--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all"],
         "git status --porcelain=v2 -z",
     )
     .await
@@ -588,6 +588,46 @@ async fn synthesize_new_file_diff(root: &Path, rel: &str) -> Result<String, Stri
         return Err(format!("'{rel}' is a binary file; no text diff available"));
     }
     Ok(format_new_file_diff(rel, &String::from_utf8_lossy(&bytes)))
+}
+
+/// Reads a text file inside a worktree for the read-only viewer.
+#[tauri::command]
+pub async fn git_read_file(worktree_path: String, file_path: String) -> Result<String, String> {
+    use tokio::io::AsyncReadExt;
+
+    let root = Path::new(&worktree_path);
+    let rel = lexical_relative(&file_path)?;
+    let too_large = || {
+        format!(
+            "'{rel}' is too large to display (limit {} MiB)",
+            MAX_UNTRACKED_DIFF_BYTES / (1024 * 1024)
+        )
+    };
+    let path = resolve_contained(root, &rel)?;
+    let meta = tokio::fs::symlink_metadata(&path)
+        .await
+        .map_err(|e| format!("cannot inspect '{rel}': {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("'{rel}' is not a regular file"));
+    }
+    if meta.len() > MAX_UNTRACKED_DIFF_BYTES {
+        return Err(too_large());
+    }
+    let mut bytes = Vec::new();
+    tokio::fs::File::open(&path)
+        .await
+        .map_err(|e| format!("cannot open '{rel}': {e}"))?
+        .take(MAX_UNTRACKED_DIFF_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|e| format!("cannot read '{rel}': {e}"))?;
+    if bytes.len() as u64 > MAX_UNTRACKED_DIFF_BYTES {
+        return Err(too_large());
+    }
+    if bytes[..bytes.len().min(BINARY_SNIFF_BYTES)].contains(&0) {
+        return Err(format!("'{rel}' is a binary file; no preview available"));
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 #[tauri::command]

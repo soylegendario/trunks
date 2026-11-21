@@ -68,8 +68,8 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
   - [x] **M1 - Tarea 2 Completada:** Integración de UI para registro de repositorios Git y gestión de worktrees en barra lateral izquierda (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, componentes modales y `WorktreeList.svelte`). Verificación manual **parcial** y deuda conocida: ver la sección "Task 2 review and manual pass" del plan activo.
   - ✅ **Decisión tomada (caché de worktrees):** SQLite guarda solo la referencia del proyecto (id, nombre, ruta) y la selección; los worktrees se leen siempre de Git, sin caché. La lógica está en `src/lib/project-logic.ts` y se prueba con `npm run test:unit`. La Tarea 3 debe enlazar pestañas con la ruta del worktree que informa Git.
   - [x] **M1 - Tarea 3 Completada (código):** pestañas enlazadas a la ruta del worktree que informa Git (`findTabForWorktree` en `project-logic.ts`; abrir terminal enfoca la pestaña existente; botón deshabilitado en worktrees prunable; `pty_create` falla si el cwd no existe). Pendiente la pasada manual (`pwd` y reinicio en frío), ver el plan.
-  - [ ] **M1 - Tarea 4 (Siguiente):** Panel inspector lateral derecho (explorador de archivos, estado de Git y visor de diffs de solo lectura).
-  - [ ] **M1 - Tarea 5:** Validación E2E de criterios `AC-M1-01` a `AC-M1-08` y consolidación de resultados en `docs/milestones/m1-results.md`.
+  - [x] **M1 - Tarea 4 Completada (código):** panel inspector derecho (`InspectorPanel`, `GitStatusView`, `DiffViewer`, `FileTree`) con sondeo cada 2,5 s. Pendiente la pasada manual: `git_get_status`, `git_get_diff` y `git_list_files` aún no se han probado por IPC con la app (ver el plan).
+  - [ ] **M1 - Tarea 5 (Siguiente):** Validación E2E de criterios `AC-M1-01` a `AC-M1-08` y consolidación de resultados en `docs/milestones/m1-results.md`.
 
 ---
 

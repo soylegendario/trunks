@@ -13,10 +13,82 @@
   import { findTabForWorktree, tabsForWorktree } from "$lib/project-logic";
   import TerminalView from "$lib/TerminalView.svelte";
   import WorktreeList from "$lib/components/WorktreeList.svelte";
+  import InspectorPanel from "$lib/components/InspectorPanel.svelte";
+  import FileViewer from "$lib/components/FileViewer.svelte";
+
+  type FileTab = {
+    id: string;
+    worktreePath: string;
+    path: string;
+    mode: "file" | "diff";
+    cached: boolean;
+  };
+  // Read-only file/diff tabs (not persisted across restarts).
+  let fileTabs = $state<FileTab[]>([]);
+  let activeFileId = $state("");
+  let visibleFileTabs = $derived(
+    fileTabs.filter((f) => f.worktreePath === projectStore.selectedWorktreePath)
+  );
+  let activeFile = $derived(visibleFileTabs.find((f) => f.id === activeFileId) ?? null);
+
+  function openFileTab(path: string, mode: "file" | "diff", cached: boolean) {
+    const wt = projectStore.selectedWorktreePath;
+    if (!wt) return;
+    const id = `${wt}|${mode}|${cached ? 1 : 0}|${path}`;
+    if (!fileTabs.some((f) => f.id === id)) {
+      fileTabs = [...fileTabs, { id, worktreePath: wt, path, mode, cached }];
+    }
+    activeFileId = id;
+  }
+
+  function closeFileTab(id: string, event?: Event) {
+    event?.stopPropagation();
+    fileTabs = fileTabs.filter((f) => f.id !== id);
+    if (activeFileId === id) {
+      activeFileId = "";
+      requestAnimationFrame(() => sessions.get(activeTabId)?.fit());
+    }
+  }
 
   let showLeft = $state(true);
   let showRight = $state(true);
   let centerWidth = $state(0);
+  const MIN_SIDE = 200;
+  const MAX_SIDE = 700;
+  function loadWidth(key: string, fallback: number) {
+    try {
+      const v = Number(localStorage.getItem(key));
+      return v >= MIN_SIDE && v <= MAX_SIDE ? v : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  let leftWidth = $state(loadWidth("trunks.leftWidth", 300));
+  let rightWidth = $state(loadWidth("trunks.rightWidth", 320));
+
+  function startResize(side: "left" | "right", e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = side === "left" ? leftWidth : rightWidth;
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const w = Math.min(MAX_SIDE, Math.max(MIN_SIDE, startW + (side === "left" ? dx : -dx)));
+      if (side === "left") leftWidth = w;
+      else rightWidth = w;
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("resizing");
+      try {
+        localStorage.setItem("trunks.leftWidth", String(leftWidth));
+        localStorage.setItem("trunks.rightWidth", String(rightWidth));
+      } catch {}
+    };
+    document.body.classList.add("resizing");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
   let centerHeight = $state(0);
   let centerElement = $state<HTMLElement | null>(null);
 
@@ -231,6 +303,7 @@
   }
 
   function selectTab(id: string) {
+    activeFileId = "";
     activeTabId = id;
     persistLayoutState();
     requestAnimationFrame(() => {
@@ -349,6 +422,22 @@
     };
   });
 
+  onMount(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "b") {
+        e.preventDefault();
+        toggleLeft();
+      } else if (k === "l") {
+        e.preventDefault();
+        toggleRight();
+      }
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
+
   onDestroy(async () => {
     for (const session of sessions.values()) {
       await session.destroy();
@@ -364,35 +453,38 @@
         class="toggle-btn"
         class:active={showLeft}
         onclick={toggleLeft}
-        title="Toggle Projects & Worktrees Sidebar"
+        title="Toggle Projects Sidebar (⌘B)"
+        aria-label="Toggle Projects Sidebar"
       >
-        {showLeft ? "◀ Worktrees" : "▶ Worktrees"}
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+          <line x1="6" y1="2.75" x2="6" y2="13.25" />
+          {#if showLeft}<rect x="2" y="3" width="4" height="10" fill="currentColor" stroke="none" />{/if}
+        </svg>
       </button>
       <span class="app-title">Trunks</span>
-      <span class="badge">Milestone 1 — Worktrees</span>
-      <span class="db-badge" title="SQLite Transactional Store">SQLite: WAL</span>
     </div>
-    <div class="header-center">
-      <span class="dimension-indicator">Center Area: {centerWidth}px × {centerHeight}px</span>
-      {#if systemInfo}
-        <span class="os-indicator">OS: {systemInfo.os} ({systemInfo.default_shell})</span>
-      {/if}
-    </div>
+    <div class="header-center"></div>
     <div class="header-right">
       <button
         class="toggle-btn"
         class:active={showRight}
         onclick={toggleRight}
-        title="Toggle Acceptance Checklist"
+        title="Toggle Inspector Sidebar (⌘L)"
+        aria-label="Toggle Inspector Sidebar"
       >
-        {showRight ? "Checklist ▶" : "◀ Checklist"}
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+          <line x1="10" y1="2.75" x2="10" y2="13.25" />
+          {#if showRight}<rect x="10" y="3" width="4" height="10" fill="currentColor" stroke="none" />{/if}
+        </svg>
       </button>
     </div>
   </header>
 
   <div class="app-body">
     {#if showLeft}
-      <aside class="panel left-panel">
+      <aside class="panel left-panel" style:width="{leftWidth}px">
         <WorktreeList
           onOpenTerminal={openOrFocusWorktreeTab}
           runningTerminals={(path) =>
@@ -404,6 +496,8 @@
           onSelectWorktree={() => persistLayoutState()}
         />
       </aside>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="resizer" onpointerdown={(e) => startResize("left", e)}></div>
     {/if}
 
     <main class="panel center-panel" bind:this={centerElement}>
@@ -414,7 +508,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="tab"
-              class:active={activeTabId === tab.id}
+              class:active={activeTabId === tab.id && !activeFile}
               class:is-restored={tab.isRestored}
               class:is-stale={tab.isStale}
               onclick={() => selectTab(tab.id)}
@@ -478,6 +572,19 @@
               </button>
             </div>
           {/each}
+          {#each visibleFileTabs as f (f.id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="tab"
+              class:active={activeFileId === f.id}
+              onclick={() => (activeFileId = f.id)}
+            >
+              <span class="file-ico">{f.mode === "diff" ? "±" : "▤"}</span>
+              <span class="tab-title" title={f.path}>{f.path.split("/").pop()}</span>
+              <button class="tab-close-btn" onclick={(e) => closeFileTab(f.id, e)} title="Close">×</button>
+            </div>
+          {/each}
           <button
             class="new-tab-btn"
             onclick={newTerminalInSelection}
@@ -492,7 +599,7 @@
       </div>
 
       <div class="panel-content center-content">
-        {#if visibleTabs.length === 0}
+        {#if visibleTabs.length === 0 && !activeFile}
           <div class="empty-state">
             <p>No terminals in this worktree.</p>
             <button class="action-btn primary" onclick={newTerminalInSelection}>
@@ -503,88 +610,29 @@
         {#each tabs as tab (tab.id)}
           {@const session = sessions.get(tab.id)}
           {#if session}
-            <TerminalView {session} isActive={activeTabId === tab.id} />
+            <TerminalView {session} isActive={activeTabId === tab.id && !activeFile} />
           {/if}
         {/each}
+        {#if activeFile}
+          <div class="file-overlay">
+            {#key activeFile.id}
+              <FileViewer
+                worktreePath={activeFile.worktreePath}
+                path={activeFile.path}
+                mode={activeFile.mode}
+                cached={activeFile.cached}
+              />
+            {/key}
+          </div>
+        {/if}
       </div>
     </main>
 
     {#if showRight}
-      <aside class="panel right-panel">
-        <div class="panel-header">
-          <h3>M1 Acceptance Checklist</h3>
-        </div>
-        <div class="panel-content checklist-content">
-          <div class="checklist-section">
-            <h4>Worktree Management (Task 2)</h4>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac1} />
-                <span><strong>AC-M1-01:</strong> Local Git Project Registration</span>
-              </label>
-              <span class="hint-text">Add local project via "+ Add Project" in the left sidebar.</span>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac2} />
-                <span><strong>AC-M1-02:</strong> Real Git Worktree Discovery</span>
-              </label>
-              <span class="hint-text">Discovers all worktrees, branches &amp; HEAD hashes directly via Git CLI.</span>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac3} />
-                <span><strong>AC-M1-03:</strong> UI Worktree Creation (git worktree add)</span>
-              </label>
-              <span class="hint-text">Creates worktree on new branch or checks out existing branch.</span>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac4} />
-                <span><strong>AC-M1-04:</strong> Terminal Spawning in Worktree PWD</span>
-              </label>
-              <button
-                class="test-helper-btn"
-                onclick={() => sendQuickCommand("pwd && git status -s")}
-              >
-                Test PWD &amp; Git
-              </button>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac5} />
-                <span><strong>AC-M1-05:</strong> External CLI Synchronization</span>
-              </label>
-              <button
-                class="test-helper-btn"
-                onclick={() => projectStore.refreshAll()}
-              >
-                Refresh Worktrees (↻)
-              </button>
-            </div>
-
-            <div class="checklist-item">
-              <label>
-                <input type="checkbox" bind:checked={checklist.ac6} />
-                <span><strong>AC-M1-06:</strong> Guarded Worktree Removal</span>
-              </label>
-              <span class="hint-text">Refuses main worktree; supports `--force` for dirty worktrees.</span>
-            </div>
-          </div>
-
-          <div class="info-card">
-            <h4>Live Workspace State</h4>
-            <p>DB Status: <code>{dbStatus}</code></p>
-            <p>Active Tab: <code>{activeTabId || "None"}</code></p>
-            <p>Active Tabs: <code>{tabs.length}</code> (Running: <code>{tabs.filter((t) => t.status === "running").length}</code>)</p>
-            <p>Registered Repos: <code>{projectStore.projects.length}</code></p>
-          </div>
-        </div>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="resizer" onpointerdown={(e) => startResize("right", e)}></div>
+      <aside class="panel right-panel" style:width="{rightWidth}px">
+        <InspectorPanel worktreePath={projectStore.selectedWorktreePath} onOpenFile={openFileTab} />
       </aside>
     {/if}
   </div>
@@ -637,30 +685,12 @@
     letter-spacing: 0.5px;
   }
 
-  .badge {
-    background: #45475a;
-    color: #89b4fa;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 600;
-  }
-
-  .db-badge {
-    background: #313244;
-    color: #a6e3a1;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 500;
-    border: 1px solid #45475a;
-  }
 
   .toggle-btn {
-    background: #313244;
-    border: 1px solid #45475a;
-    color: #cdd6f4;
-    padding: 4px 8px;
+    background: transparent;
+    border: none;
+    color: #a6adc8;
+    padding: 4px 6px;
     border-radius: 4px;
     font-size: 11px;
     cursor: pointer;
@@ -668,25 +698,13 @@
   }
 
   .toggle-btn:hover {
-    background: #45475a;
-    color: #89b4fa;
+    color: #cdd6f4;
   }
 
   .toggle-btn.active {
-    background: #45475a;
-    color: #89b4fa;
-    border-color: #89b4fa;
+    color: #cdd6f4;
   }
 
-  .dimension-indicator, .os-indicator {
-    color: #a6adc8;
-    font-family: monospace;
-    font-size: 11px;
-    background: #11111b;
-    padding: 2px 6px;
-    border-radius: 3px;
-    border: 1px solid #313244;
-  }
 
   .app-body {
     display: flex;
@@ -702,9 +720,27 @@
     overflow: hidden;
   }
 
+  .resizer {
+    width: 5px;
+    margin: 0 -2px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    z-index: 5;
+    background: transparent;
+  }
+
+  .resizer:hover,
+  :global(body.resizing) .resizer {
+    background: rgba(137, 180, 250, 0.4);
+  }
+
+  :global(body.resizing) {
+    cursor: col-resize;
+  }
+
   .left-panel {
-    width: 300px;
-    min-width: 260px;
+    flex-shrink: 0;
+    min-width: 200px;
     background-color: #181825;
     border-right: 1px solid #313244;
   }
@@ -716,8 +752,8 @@
   }
 
   .right-panel {
-    width: 320px;
-    min-width: 280px;
+    flex-shrink: 0;
+    min-width: 200px;
     background-color: #181825;
     border-left: 1px solid #313244;
   }
@@ -731,14 +767,6 @@
     padding: 0 12px;
   }
 
-  .panel-header h3 {
-    margin: 0;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #a6adc8;
-  }
 
   .center-header {
     padding: 0;
@@ -919,6 +947,17 @@
     background-color: #11111b;
   }
 
+  .file-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+  }
+
+  .file-ico {
+    font-size: 11px;
+    color: #89b4fa;
+  }
+
   .empty-state {
     display: flex;
     flex-direction: column;
@@ -956,105 +995,5 @@
   .action-btn.primary:hover {
     background: #b4befe;
     border-color: #b4befe;
-  }
-
-  /* Right Panel / Checklist Styles */
-  .checklist-content {
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .checklist-section {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .checklist-section h4 {
-    margin: 0;
-    font-size: 12px;
-    font-weight: 600;
-    color: #89b4fa;
-    border-bottom: 1px solid #313244;
-    padding-bottom: 4px;
-  }
-
-  .checklist-item {
-    background: #11111b;
-    border: 1px solid #313244;
-    border-radius: 6px;
-    padding: 8px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .checklist-item label {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    font-size: 11px;
-    color: #cdd6f4;
-    cursor: pointer;
-    line-height: 1.3;
-  }
-
-  .checklist-item input[type="checkbox"] {
-    margin-top: 2px;
-    accent-color: #89b4fa;
-  }
-
-  .hint-text {
-    font-size: 10px;
-    color: #6c7086;
-    padding-left: 20px;
-  }
-
-  .test-helper-btn {
-    align-self: flex-start;
-    margin-left: 20px;
-    background: #313244;
-    border: 1px solid #45475a;
-    color: #89b4fa;
-    font-size: 10px;
-    padding: 3px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-family: monospace;
-    transition: all 0.15s ease;
-  }
-
-  .test-helper-btn:hover {
-    background: #45475a;
-    border-color: #89b4fa;
-  }
-
-  .info-card {
-    background: #11111b;
-    border: 1px solid #313244;
-    border-radius: 6px;
-    padding: 10px;
-    font-size: 11px;
-    color: #a6adc8;
-  }
-
-  .info-card h4 {
-    margin: 0 0 8px 0;
-    color: #89b4fa;
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  .info-card p {
-    margin: 4px 0;
-  }
-
-  .info-card code {
-    background: #181825;
-    padding: 1px 4px;
-    border-radius: 3px;
-    color: #cdd6f4;
   }
 </style>
