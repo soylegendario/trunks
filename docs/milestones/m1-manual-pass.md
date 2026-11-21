@@ -21,7 +21,7 @@ Ramas sin worktree: `release/1.0` (local y remota), `origin/remote-only` (solo r
 
 ## AC-M1-01 Registro
 
-1. `+ Add Repo` con `S/repo ñ con espacio` → aparece con nombre "repo ñ con espacio" y sus worktrees.
+1. `+ Add Project` con `S/repo ñ con espacio` → aparece con nombre "repo ñ con espacio" y sus worktrees.
 2. Añadir `S/not-a-repo` → error claro, NO se registra nada.
 3. Añadir `S/repo ñ con espacio/src/nested/deep` (subcarpeta) → se normaliza a la raíz, NO duplica el proyecto.
 4. Cerrar y reabrir la app → el proyecto sigue ahí.
@@ -68,6 +68,9 @@ Ramas sin worktree: `release/1.0` (local y remota), `origin/remote-only` (solo r
 27. Con un worktree seleccionado, cerrar la app, quitarlo desde fuera (`git worktree remove`) y reabrir → al cargar se selecciona el primer worktree del proyecto, sin dejar una selección inválida.
 
 ## Preparado para la Tarea 4 (no es de esta pasada)
+
+Comprobaciones añadidas tras los cambios de UI: Cmd+B y Cmd+L muestran/ocultan los paneles (también con el foco en una terminal); arrastrar el borde de cada panel lo redimensiona y el ancho se recuerda al reabrir; pulsar un archivo en Files o Git abre una pestaña de solo lectura en el centro; `new-dir/` lista sus archivos agrupados por carpeta plegable; la bolita verde/naranja aparece en el worktree con terminales en ejecución/restauradas.
+
 
 Estado esperado de `wt-dirty`: ` M README.md` · `M  src/app.txt` · `R  old-name.txt -> renamed ñ.txt` · `?? new-dir/` ·
 `?? untracked text.txt` (3 líneas, sin salto final) · `?? untracked.bin` (binario) · `?? untracked-big.txt` (>1 MiB → "too large").

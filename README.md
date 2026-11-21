@@ -17,7 +17,12 @@ This repository is developed cooperatively across multiple AI agents (Junie, Cod
     - Task 1 — native Git backend in Rust (`src-tauri/src/git.rs`, eight Tauri commands registered, 43 tests passing).
     - Task 2 — project registration and worktree management UI (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, modals and sidebar `WorktreeList.svelte`).
     - Task 3 — tabs bound to Git-reported worktree paths (open-or-focus, missing-directory guard). Code and unit tests done; manual `pwd` and cold-restart passes pending.
-  - **Task 4 done (code):** read-only right-side inspector (Git status, diff viewer, file tree); pending a manual pass with the running app.
+  - **Task 4 done (code):** read-only right-side inspector (Git status grouped by folder, file tree); files and diffs open as read-only centre tabs; panels are resizable and toggled with Cmd+B / Cmd+L. Pending a manual pass with the running app.
+  - **What the app does today:**
+    - Projects sidebar (left): register local Git projects, list and create/remove worktrees, with a green dot when a worktree has running terminals and an orange dot when it only has restored (stopped) ones.
+    - Multiple terminals per worktree; selecting a worktree shows only its terminals and file/diff tabs. Terminals stay alive when hidden.
+    - Inspector (right): Git status grouped in collapsible folders (staged / changes, individual files of new folders) and a lazy file tree. Selecting a file or diff opens a read-only tab in the centre area.
+    - Both side panels are resizable (state kept in `localStorage`) and toggled from VS Code-style header icons or with Cmd+B (projects) and Cmd+L (inspector).
   - **Next Objective:** Task 5 — end-to-end validation of `AC-M1-01`..`AC-M1-08` and `docs/milestones/m1-results.md`.
 
 Start with:

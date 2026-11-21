@@ -105,7 +105,7 @@
   - `git_get_diff`: untracked files above 1 MiB or with a NUL in the first 8 KiB return `Err` ("too large" / "binary file"); synthetic headers always say mode `100644`.
   - `git_list_files` sorts by name in byte order (not case-insensitive) and hides `.git` at any depth.
   - Status omits ignored (`!`) records and headers (`#`).
-- Known gaps: the "upgrade Git" message for `--porcelain=v2` is only unit-tested against an assumed Git wording; symlink tests are `#[cfg(unix)]`; Windows `\\?\` canonical paths and worktrees with quoted (newline) paths are untested; untracked directories appear as a single `dir/` entry (Git default).
+- Known gaps: the "upgrade Git" message for `--porcelain=v2` is only unit-tested against an assumed Git wording; symlink tests are `#[cfg(unix)]`; Windows `\\?\` canonical paths and worktrees with quoted (newline) paths are untested; untracked directories appeared as a single `dir/` entry (fixed later in Task 4 follow-ups with `--untracked-files=all`).
 
 ---
 
@@ -188,7 +188,7 @@
 
 **Interfaces:**
 - Consumes: `git_get_status`, `git_get_diff`, `git_list_files` from active worktree.
-- Produces: Interactive inspector showing changed files and syntax-highlighted diffs.
+- Produces: Interactive inspector showing changed files; diffs and files open as read-only centre tabs (no syntax highlighting; diff lines are coloured).
 
 - [x] Build the inspector tab switcher in the right panel (File Explorer / Git Status).
 - [x] Implement `GitStatusView` displaying modified, staged, and untracked files with status indicators.
@@ -197,8 +197,14 @@
 - [x] Ensure polling / refresh updates the status when commands run in the terminal.
 
 **Task 4 implementation notes (2026-11-21; `npm run check` 0 errors, `npm run build` and `npm run test:unit` pass):**
-- `InspectorPanel.svelte` follows `projectStore.selectedWorktreePath`, with Git / Files tabs; it polls `git_get_status` every 2.5 s (skipped when the window is hidden) and on window focus. The right panel switches between Inspector and the M1 checklist.
+- `InspectorPanel.svelte` follows `projectStore.selectedWorktreePath`, with Git / Files tabs; it polls `git_get_status` every 2.5 s (skipped when the window is hidden) and on window focus. The right panel now shows only the inspector (the M1 checklist and the Inspector/Checklist switch were removed).
 - `GitStatusView.svelte` lists staged and unstaged/untracked entries; clicking one loads `git_get_diff` (staged entries use `cached`), reloaded on every status refresh. `DiffViewer.svelte` colours add/del/hunk/meta lines. `FileTree.svelte` lazy-loads one level per folder through `git_list_files` and reloads on the poll tick.
+- **Follow-ups after the first Task 4 pass (2026-11-21, all code-only, not tested with the running app):**
+  - `git_get_status` passes `--untracked-files=all`, so new folders list their files instead of a single `dir/` entry (this supersedes the "untracked directories appear as a single `dir/` entry" gap in Task 1).
+  - `GitStatusView` groups staged and unstaged entries as a collapsible folder tree (fold state kept per section).
+  - Files and diffs open as read-only tabs in the centre area (`FileViewer.svelte`, refreshed every 2.5 s; tabs not persisted across restarts); the bottom diff pane was removed. New ninth Tauri command `git_read_file` (`git.rs`, `gitReadFile` in `git.ts`): path confined to the worktree, symlink-safe, 1 MiB limit, binaries rejected. No Rust test covers it yet.
+  - UI: both side panels are resizable (200–700 px, kept in `localStorage`); VS Code-style header icons toggle them, with Cmd+B (projects) and Cmd+L (inspector); the header lost the milestone/SQLite/size/OS texts; "Repositories" became "Projects" in visible texts; worktree rows show a green dot (running terminals) or orange dot (only restored/stopped ones); emoji icons removed.
+  - Still unchecked: that Cmd+L does not clash with a webview shortcut, and that both shortcuts work with focus inside a terminal.
 - **Not verified with the running app:** the three IPC commands (`git_get_status`, `git_get_diff`, `git_list_files`) have still not been exercised through Tauri; the status chars are assumed to use `.` for "none" (handled together with space). Diffs of binary/large untracked files surface the backend error. No frontend tests for the new components.
 
 ---
