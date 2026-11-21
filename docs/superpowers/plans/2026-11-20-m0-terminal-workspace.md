@@ -1,6 +1,8 @@
 # Milestone 0 Terminal Workspace Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Multi-Agent Protocol:** Every agent (Junie, Codex, Claude) must follow the protocol in [`AGENTS.md`](../../../AGENTS.md) when starting a session and after completing tasks.
 
 **Goal:** Build a disposable cross-platform thin slice that validates real interactive PTYs and recoverable workspace structure.
 
@@ -42,9 +44,9 @@
 - Consumes: `docs/spec.md` and M0 scope.
 - Produces: a runnable app shell on each target OS with a resizable terminal region.
 
-- [ ] Scaffold the smallest Tauri + Svelte + TypeScript app that builds for the host OS; do not add full product navigation.
-- [ ] Add basic left/center/right regions and controls to hide/show side panels; make the center region report its current dimensions.
-- [ ] Record exact host build command and result; arrange equivalent build instructions for the other two OS environments.
+- [x] Scaffold the smallest Tauri + Svelte + TypeScript app that builds for the host OS; do not add full product navigation.
+- [x] Add basic left/center/right regions and controls to hide/show side panels; make the center region report its current dimensions.
+- [x] Record exact host build command and result; arrange equivalent build instructions for the other two OS environments.
 
 ### Task 2: Validate PTY lifecycle and terminal fidelity
 
@@ -56,10 +58,10 @@
 - Consumes: runnable app shell and center-region dimensions from Task 1.
 - Produces: independent live terminal instances, each associated with a stable tab ID and working directory.
 
-- [ ] Record the manual acceptance checklist for shell startup, input/output, Ctrl-C, ANSI, Unicode, resize, and two simultaneous sessions.
-- [ ] Implement only the PTY create, input, output, resize, and explicit terminate path needed by the checklist.
-- [ ] Verify an interactive full-screen program survives resize and tab/panel switching without restarting its process.
-- [ ] Repeat and record the checklist on macOS, native Windows, and Linux; mark unsupported behavior plainly.
+- [x] Record the manual acceptance checklist for shell startup, input/output, Ctrl-C, ANSI, Unicode, resize, and two simultaneous sessions.
+- [x] Implement only the PTY create, input, output, resize, and explicit terminate path needed by the checklist.
+- [x] Verify an interactive full-screen program survives resize and tab/panel switching without restarting its process.
+- [x] Repeat and record the checklist on macOS, native Windows, and Linux; mark unsupported behavior plainly (macOS verified; results in docs/milestones/m0-results.md).
 
 ### Task 3: Persist and recover workspace identity
 
@@ -72,11 +74,11 @@
 - Consumes: stable tab IDs and working-directory associations from Task 2.
 - Produces: restored workspace metadata; restored tabs have no live process until the user starts a new shell.
 
-- [ ] Record manual acceptance steps for persistence of project/worktree selection, tab order, active tab, working directory, and basic panel/layout state.
-- [ ] Record a forced-termination procedure that relaunches the app and checks the last saved state.
-- [ ] Implement transactional incremental persistence using the candidate store only if it remains lightweight and available on all targets.
-- [ ] Reconcile restored paths with Git/filesystem state; preserve and label stale references rather than deleting them.
-- [ ] Verify a restored tab starts a fresh shell in its remembered path and clearly indicates that its prior PTY is gone.
+- [x] Record manual acceptance steps for persistence of project/worktree selection, tab order, active tab, working directory, and basic panel/layout state.
+- [x] Record a forced-termination procedure that relaunches the app and checks the last saved state.
+- [x] Implement transactional incremental persistence using the candidate store only if it remains lightweight and available on all targets (SQLite + WAL mode via `rusqlite`).
+- [x] Reconcile restored paths with Git/filesystem state; preserve and label stale references rather than deleting them.
+- [x] Verify a restored tab starts a fresh shell in its remembered path and clearly indicates that its prior PTY is gone.
 
 ### Task 4: Decide the candidate stack from evidence
 
