@@ -163,6 +163,7 @@
 
 **Interfaces:**
 - Consumes: Real worktree paths from Task 2.
+- **Read first:** the "Task 2 review and manual pass" section above. Bind tabs to the worktree path reported by Git (worktrees have no ids and are never read from SQLite). Decide and test what "open terminal" does on a prunable worktree whose directory is missing, and make it focus an existing tab for that worktree instead of always creating a new one. Re-check whether `db.rs` needs any change: tabs already persist `cwd`, `project_name` and `worktree_name`.
 - Produces: Terminal tabs whose PTY shells launch in the exact worktree directory and retain association in SQLite.
 
 - [ ] Connect worktree selection to terminal tabs: clicking a worktree opens or focuses a terminal tab in that worktree's path.

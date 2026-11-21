@@ -82,7 +82,7 @@ Todo agente debe respetar los principios definidos en [`docs/intent.md`](docs/in
 | Instalar dependencias frontend | `npm install` |
 | Verificación de tipos y linting | `npm run check` |
 | Compilación del frontend | `npm run build` |
-| Tests unitarios de la lógica del frontend | `npm run test:unit` (runner integrado de Node, sin dependencias) |
+| Tests unitarios de la lógica del frontend | `npm run test:unit` (runner integrado de Node, sin dependencias; ejecuta TypeScript de forma nativa, probado con Node 22.23: en versiones anteriores puede fallar) |
 | Verificación rápida de Rust | `cargo check --manifest-path src-tauri/Cargo.toml` |
 | Compilación de Rust en debug | `cargo build --manifest-path src-tauri/Cargo.toml` |
 | Ejecución en modo desarrollo | `npm run tauri dev` |
