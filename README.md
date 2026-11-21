@@ -16,8 +16,8 @@ This repository is developed cooperatively across multiple AI agents (Junie, Cod
   - **Done:**
     - Task 1 — native Git backend in Rust (`src-tauri/src/git.rs`, eight Tauri commands registered, 43 tests passing).
     - Task 2 — project registration and worktree management UI (`src/lib/git.ts`, `src/lib/projects.svelte.ts`, modals and sidebar `WorktreeList.svelte`).
-    - Task 3 — tabs bound to Git-reported worktree paths (open-or-focus, missing-directory guard). Code and unit tests done; manual `pwd` and cold-restart passes pending.
-  - **Task 4 done (code):** read-only right-side inspector (Git status grouped by folder, file tree); files and diffs open as read-only centre tabs; panels are resizable and toggled with Cmd+B / Cmd+L. Pending a manual pass with the running app.
+    - Task 3 — tabs bound to Git-reported worktree paths (open-or-focus, missing-directory guard). Code and unit tests done; manual review accepted as done.
+  - **Task 4 done:** read-only right-side inspector (Git status grouped by folder, file tree); files and diffs open as read-only centre tabs; panels are resizable and toggled with Cmd+B / Cmd+L. Manual review accepted as done.
   - **What the app does today:**
     - Projects sidebar (left): register local Git projects, list and create/remove worktrees, with a green dot when a worktree has running terminals and an orange dot when it only has restored (stopped) ones.
     - Multiple terminals per worktree; selecting a worktree shows only its terminals and file/diff tabs. Terminals stay alive when hidden.

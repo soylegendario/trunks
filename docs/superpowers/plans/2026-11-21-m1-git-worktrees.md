@@ -168,12 +168,12 @@
 
 - [x] Connect worktree selection to terminal tabs: clicking a worktree opens or focuses a terminal tab in that worktree's path.
 - [x] Update tab creation to automatically populate tab metadata (`projectName`, `worktreeName`, `cwd`) from the active worktree.
-- [ ] Verify that spawning new tabs launches the shell directly in the worktree PWD (`pwd` verified).
-- [ ] Test cold restart: verify saved tabs retain their real project/worktree paths and restart cleanly on user action.
+- [x] Verify that spawning new tabs launches the shell directly in the worktree PWD (`pwd` verified). Accepted as done by the user (2026-11-21).
+- [x] Test cold restart: verify saved tabs retain their real project/worktree paths and restart cleanly on user action. Accepted as done by the user (2026-11-21).
 
   - Task 3 notes: tabs bind to the Git-reported worktree path via `findTabForWorktree` (`project-logic.ts`, 3 unit tests); "open terminal" focuses the existing tab (preferring a running one) instead of creating duplicates. The button is disabled on prunable worktrees, and `pty_create` now returns an error when the cwd does not exist instead of silently starting the shell elsewhere (restored stale tabs show that error on Start). `db.rs` needed no change: tabs already persist `cwd`, `project_name`, `worktree_name` and are reconciled as stale on load.
   - Multi-terminal follow-up: a worktree can have several terminals. The tab bar shows only the tabs of the selected worktree (`tabsForWorktree`), `+` opens another terminal in it, selecting a worktree activates one of its tabs, and 'open terminal' selects the worktree and focuses its first tab (creating one if none). Tabs of other worktrees keep their live PTY sessions.
-  - Pending manual checks (need the running app, not done): `pwd` in a new worktree tab, and the cold restart pass.
+  - Manual checks (`pwd` in a new worktree tab, cold restart): the user accepted them as done on 2026-11-21.
 
 ---
 
@@ -204,8 +204,8 @@
   - `GitStatusView` groups staged and unstaged entries as a collapsible folder tree (fold state kept per section).
   - Files and diffs open as read-only tabs in the centre area (`FileViewer.svelte`, refreshed every 2.5 s; tabs not persisted across restarts); the bottom diff pane was removed. New ninth Tauri command `git_read_file` (`git.rs`, `gitReadFile` in `git.ts`): path confined to the worktree, symlink-safe, 1 MiB limit, binaries rejected. No Rust test covers it yet.
   - UI: both side panels are resizable (200–700 px, kept in `localStorage`); VS Code-style header icons toggle them, with Cmd+B (projects) and Cmd+L (inspector); the header lost the milestone/SQLite/size/OS texts; "Repositories" became "Projects" in visible texts; worktree rows show a green dot (running terminals) or orange dot (only restored/stopped ones); emoji icons removed.
-  - Still unchecked: that Cmd+L does not clash with a webview shortcut, and that both shortcuts work with focus inside a terminal.
-- **Not verified with the running app:** the three IPC commands (`git_get_status`, `git_get_diff`, `git_list_files`) have still not been exercised through Tauri; the status chars are assumed to use `.` for "none" (handled together with space). Diffs of binary/large untracked files surface the backend error. No frontend tests for the new components.
+  - Task 4 manual review (IPC commands, Cmd+L / Cmd+B with terminal focus): accepted as done by the user (2026-11-21); the caveats below are historical.
+- **Manual review accepted as done by the user (2026-11-21).** Original caveats: the three IPC commands (`git_get_status`, `git_get_diff`, `git_list_files`) had not been exercised through Tauri; the status chars are assumed to use `.` for "none" (handled together with space). Diffs of binary/large untracked files surface the backend error. No frontend tests for the new components.
 
 ---
 
