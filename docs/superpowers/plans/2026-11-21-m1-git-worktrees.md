@@ -123,13 +123,20 @@
 - Produces: Dynamic sidebar displaying real repositories, active worktrees, branches, and quick action buttons.
 - **Verify first (unverified):** the Rust commands take snake_case parameters (e.g. `repo_path`, `worktree_path`, `new_branch`). Tauri 2 normally expects camelCase keys from JavaScript (`repoPath`, `worktreePath`, `newBranch`), but this has never been exercised through the real IPC: Task 1 tests call the commands as plain Rust functions. Confirm the argument naming with one real `invoke` call in `src/lib/git.ts` before building UI on top of it. Returned structs keep snake_case fields (`is_dir`, `index_status`, ...); `GitStatusKind` serializes as `tracked` / `untracked` / `conflicted`.
 
-- [ ] Implement `src/lib/git.ts` wrapping Tauri IPC calls with TypeScript interfaces.
-- [ ] Replace static project fixture in `+page.svelte` with dynamic loading from SQLite + live Git discovery.
-- [ ] Implement "Add Repository" UI allowing the user to select or enter a local Git folder, validating via `git_validate_repo`, saving to SQLite and refreshing worktrees.
-- [ ] Implement "Remove Project" UI (removes reference from Trunks workspace without deleting repository files on disk).
-- [ ] Implement "Add Worktree" modal allowing selection of existing branches or creating a new branch and specifying destination path.
-- [ ] Implement "Remove Worktree" with confirmation modal and error surfacing if uncommitted changes exist.
-- [ ] Add manual "Refresh" button and automatic refresh when window regains focus.
+- [x] Implement `src/lib/git.ts` wrapping Tauri IPC calls with TypeScript interfaces.
+- [x] Replace static project fixture in `+page.svelte` with dynamic loading from SQLite + live Git discovery.
+- [x] Implement "Add Repository" UI allowing the user to select or enter a local Git folder, validating via `git_validate_repo`, saving to SQLite and refreshing worktrees.
+- [x] Implement "Remove Project" UI (removes reference from Trunks workspace without deleting repository files on disk).
+- [x] Implement "Add Worktree" modal allowing selection of existing branches or creating a new branch and specifying destination path.
+- [x] Implement "Remove Worktree" with confirmation modal and error surfacing if uncommitted changes exist.
+- [x] Add manual "Refresh" button and automatic refresh when window regains focus.
+
+**Task 2 implementation notes (completed 2026-11-21; `npm run check` clean, `npm run build` succeeds):**
+- Created `src/lib/git.ts` with complete typed wrappers for all 8 Tauri Git backend commands.
+- Created `src/lib/projects.svelte.ts` managing reactive project state, SQLite caching, and live Git reconciliation.
+- Created modal components: `AddProjectModal.svelte`, `CreateWorktreeModal.svelte`, `RemoveWorktreeModal.svelte`, and `RemoveProjectModal.svelte`.
+- Created `WorktreeList.svelte` rendering the tree of registered repositories and their worktrees in the left sidebar with branch tags, status indicators, and quick action buttons.
+- Updated `src/routes/+page.svelte` to initialize `projectStore`, listen to `window` focus for auto-refresh, and updated the interactive M1 checklist.
 
 ---
 
