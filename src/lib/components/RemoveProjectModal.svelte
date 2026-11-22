@@ -8,7 +8,8 @@
   }: {
     isOpen: boolean;
     project: ProjectState | null;
-    onRemoved?: () => void;
+    /** Called after removal with every path the project owned (main repo and worktrees). */
+    onRemoved?: (removedPaths: string[]) => void;
   } = $props();
 
   let isSubmitting = $state(false);
@@ -27,10 +28,11 @@
   async function handleRemove() {
     if (!project) return;
     isSubmitting = true;
+    const removedPaths = [project.path, ...project.worktrees.map((w) => w.path)];
     try {
       await projectStore.removeProject(project.id);
       isOpen = false;
-      onRemoved?.();
+      onRemoved?.(removedPaths);
     } catch (err) {
       console.error("Failed to remove project:", err);
     } finally {

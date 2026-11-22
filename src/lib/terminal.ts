@@ -1,6 +1,20 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { SerializeAddon } from "@xterm/addon-serialize";
+import {
+  isSnapshotsEnabledLocal,
+  snapshotLoad,
+  snapshotSave,
+} from "./snapshots";
+import {
+  buildRestoreSequence,
+  captureDelayMs,
+  newShellPrelude,
+  shouldCapture,
+  shouldRestoreSnapshot,
+  snapshotHasAltScreen,
+} from "./snapshot-logic";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
@@ -44,6 +58,16 @@ export class TerminalSession {
   private isDisposed = false;
   private onStatusChange?: (status: "running" | "stopped") => void;
   private fitTimer: ReturnType<typeof setTimeout> | null = null;
+  private serializeAddon = new SerializeAddon();
+  // Snapshot capture state. `dirty` is only set by live output, never by restoring a snapshot, so
+  // an untouched restored tab is not re-saved with the old separator baked into its content.
+  private dirty = false;
+  private firstDirtyAt = 0;
+  private lastOutputAt = 0;
+  private captureTimer: ReturnType<typeof setTimeout> | null = null;
+  private capturing = false;
+  private restoredAltScreen = false;
+  private showedSnapshot = false;
 
   constructor(
     tab: TerminalTab,
@@ -89,6 +113,7 @@ export class TerminalSession {
     // Correct width for box-drawing/symbol/emoji glyphs used by TUIs (Claude Code statusline)
     this.terminal.loadAddon(new Unicode11Addon());
     this.terminal.unicode.activeVersion = "11";
+    this.terminal.loadAddon(this.serializeAddon);
 
     // Forward user keystrokes to Rust PTY
     this.terminal.onData((data) => {
@@ -117,6 +142,7 @@ export class TerminalSession {
     this.unlistenOutput = await listen<PtyOutputPayload>("pty-output", (event) => {
       if (event.payload.id === this.id && !this.isDisposed) {
         this.terminal.write(event.payload.data);
+        this.markDirty();
       }
     });
 
@@ -125,7 +151,12 @@ export class TerminalSession {
       if (event.payload.id === this.id && !this.isDisposed) {
         this.tab.status = "stopped";
         this.onStatusChange?.("stopped");
-        this.terminal.writeln("\r\n\x1b[33m[Process completed]\x1b[0m");
+        // Capture once the parser has consumed the final output and the exit notice.
+        this.terminal.write("\r\n\x1b[33m[Process completed]\x1b[0m\r\n", () => {
+          this.dirty = true;
+          if (this.firstDirtyAt === 0) this.firstDirtyAt = Date.now();
+          void this.captureNow();
+        });
       }
     });
 
@@ -133,6 +164,7 @@ export class TerminalSession {
     if (this.tab.status === "running") {
       await this.startPty();
     } else if (this.tab.isRestored) {
+      await this.restoreSnapshot();
       this.terminal.writeln("\x1b[36m[Workspace restored] This terminal tab was restored from a previous session.\x1b[0m");
       if (this.tab.isStale) {
         this.terminal.writeln(`\x1b[33m⚠️ Stale path: '${this.tab.cwd}' (${this.tab.staleReason || "directory not found"}).\x1b[0m`);
@@ -145,6 +177,12 @@ export class TerminalSession {
 
   public async startPty() {
     try {
+      if (this.showedSnapshot) {
+        // Leave a restored TUI's alternate screen and reset leftover modes before the new shell.
+        this.terminal.write(newShellPrelude(this.restoredAltScreen));
+        this.showedSnapshot = false;
+        this.restoredAltScreen = false;
+      }
       this.tab.isRestored = false;
       this.tab.status = "running";
       this.onStatusChange?.("running");
@@ -161,6 +199,83 @@ export class TerminalSession {
       this.tab.status = "stopped";
       this.onStatusChange?.("stopped");
       this.terminal.writeln(`\r\n\x1b[31mFailed to start PTY process: ${err}\x1b[0m`);
+    }
+  }
+
+  /** Shows the stored snapshot (if any) above the restored-tab notice. Never throws. */
+  private async restoreSnapshot() {
+    if (
+      !shouldRestoreSnapshot({
+        enabled: isSnapshotsEnabledLocal(),
+        isRestored: !!this.tab.isRestored,
+        status: this.tab.status,
+      })
+    ) {
+      return;
+    }
+    try {
+      const snap = await snapshotLoad(this.id);
+      if (!snap || this.isDisposed) return;
+      this.restoredAltScreen = snapshotHasAltScreen(snap.data);
+      this.showedSnapshot = true;
+      await new Promise<void>((resolve) =>
+        this.terminal.write(buildRestoreSequence(snap.data, snap.created_at), resolve)
+      );
+    } catch (err) {
+      console.warn(`Failed to restore snapshot for tab ${this.id}:`, String(err));
+    }
+  }
+
+  private markDirty() {
+    if (!isSnapshotsEnabledLocal()) return;
+    const now = Date.now();
+    if (!this.dirty) {
+      this.dirty = true;
+      this.firstDirtyAt = now;
+    }
+    this.lastOutputAt = now;
+    if (this.captureTimer) clearTimeout(this.captureTimer);
+    const delay = captureDelayMs({
+      now,
+      firstDirtyAt: this.firstDirtyAt,
+      lastOutputAt: this.lastOutputAt,
+    });
+    this.captureTimer = setTimeout(() => {
+      this.captureTimer = null;
+      void this.captureNow();
+    }, delay);
+  }
+
+  /**
+   * Serializes the buffer and stores it. Fire-and-forget safe: failures are logged without content
+   * and never affect the terminal. Also used to flush on app close.
+   */
+  public async captureNow(): Promise<void> {
+    if (this.captureTimer) {
+      clearTimeout(this.captureTimer);
+      this.captureTimer = null;
+    }
+    if (
+      this.capturing ||
+      !shouldCapture({
+        enabled: isSnapshotsEnabledLocal(),
+        disposed: this.isDisposed,
+        dirty: this.dirty,
+      })
+    ) {
+      return;
+    }
+    this.capturing = true;
+    try {
+      this.dirty = false;
+      this.firstDirtyAt = 0;
+      const data = this.serializeAddon.serialize();
+      await snapshotSave(this.id, this.terminal.cols, this.terminal.rows, data);
+    } catch (err) {
+      this.dirty = true; // keep it pending so a later trigger retries
+      console.warn(`Failed to capture snapshot for tab ${this.id}:`, String(err));
+    } finally {
+      this.capturing = false;
     }
   }
 
@@ -203,6 +318,10 @@ export class TerminalSession {
 
   public async destroy() {
     this.isDisposed = true;
+    if (this.captureTimer) {
+      clearTimeout(this.captureTimer);
+      this.captureTimer = null;
+    }
     if (this.fitTimer) {
       clearTimeout(this.fitTimer);
       this.fitTimer = null;

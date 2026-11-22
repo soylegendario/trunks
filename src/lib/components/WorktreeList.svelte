@@ -14,6 +14,8 @@
     onSelectWorktree,
     runningTerminals = () => 0,
     restoredTerminals = () => 0,
+    onWorktreeRemoved,
+    onProjectRemoved,
   }: {
     onOpenTerminal: (
       cwd: string,
@@ -26,6 +28,10 @@
     runningTerminals?: (worktreePath: string) => number;
     /** Number of restored (not yet started) terminals bound to a worktree path. */
     restoredTerminals?: (worktreePath: string) => number;
+    /** A worktree was removed: its terminal snapshots must be deleted. */
+    onWorktreeRemoved?: (worktreePath: string) => void;
+    /** A project was removed: snapshots of terminals bound to any of these paths must be deleted. */
+    onProjectRemoved?: (removedPaths: string[]) => void;
   } = $props();
 
   let addProjectOpen = $state(false);
@@ -309,11 +315,13 @@
   bind:isOpen={removeWorktreeOpen}
   project={targetProject}
   worktree={targetWorktree}
+  onRemoved={(path) => onWorktreeRemoved?.(path)}
 />
 
 <RemoveProjectModal
   bind:isOpen={removeProjectOpen}
   project={targetProject}
+  onRemoved={(paths) => onProjectRemoved?.(paths)}
 />
 
 <style>

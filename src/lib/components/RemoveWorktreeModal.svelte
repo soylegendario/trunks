@@ -11,7 +11,8 @@
     isOpen: boolean;
     project: ProjectState | null;
     worktree: GitWorktreeInfo | null;
-    onRemoved?: () => void;
+    /** Called after removal with the removed worktree path (used to purge its terminal snapshots). */
+    onRemoved?: (worktreePath: string) => void;
   } = $props();
 
   let isForceChecked = $state(false);
@@ -47,11 +48,12 @@
 
     isSubmitting = true;
     errorMessage = null;
+    const removedPath = worktree.path;
 
     try {
-      await projectStore.removeWorktree(project.id, worktree.path, isForceChecked);
+      await projectStore.removeWorktree(project.id, removedPath, isForceChecked);
       isOpen = false;
-      onRemoved?.();
+      onRemoved?.(removedPath);
     } catch (err: any) {
       errorMessage = String(err);
     } finally {

@@ -38,10 +38,10 @@
 
 ## Task 2: Frontend capture and restore
 
-- [ ] Install `@xterm/addon-serialize`; wrapper in `src/lib/snapshots.ts`.
-- [ ] Pure logic in `src/lib/snapshot-logic.ts` (debounce decision, separator text, capture triggers) with unit tests.
-- [ ] `TerminalSession`: load addon; capture on process exit, debounced while dirty, and on app close; restore on mount of a restored tab with separator and mode reset.
-- [ ] Delete snapshot in `closeTab` and on worktree/project removal; run reconcile at startup with live tab ids.
+- [x] Install `@xterm/addon-serialize`; wrapper in `src/lib/snapshots.ts`.
+- [x] Pure logic in `src/lib/snapshot-logic.ts` (debounce decision, separator text, capture triggers) with unit tests.
+- [x] `TerminalSession`: load addon; capture on process exit, debounced while dirty, and on app close; restore on mount of a restored tab with separator and mode reset.
+- [x] Delete snapshot in `closeTab` and on worktree/project removal; run reconcile at startup with live tab ids.
 - [ ] `npm run check`, `npm run build`, `npm run test:unit`; commit `feat: capture and restore terminal snapshots`.
 
 ## Task 3: Settings and privacy notice

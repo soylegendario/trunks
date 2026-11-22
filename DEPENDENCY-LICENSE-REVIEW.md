@@ -9,9 +9,9 @@ This is a preliminary manifest and lockfile review of `package.json`, `package-l
 - The direct Rust dependencies (`tauri`, `tauri-plugin-opener`, `portable-pty`, `rusqlite`, `serde`, `serde_json`, and `tokio`) use permissive MIT and/or Apache-2.0 terms. Apache-2.0 is compatible with GPL v3.
 - The reviewed transitive dependency metadata primarily declares MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, or Unlicense terms, which do not present an apparent GPL v3 compatibility conflict.
 
-## Planned addition (M3)
+## Addition (M3)
 
-- `@xterm/addon-serialize` 0.13.0 declares the MIT license and a peer dependency of `@xterm/xterm ^5.0.0`, which matches the installed 5.5. Later versions target xterm 6 and must not be used until xterm is upgraded. It will be added to the direct JavaScript runtime dependencies when Task 2 of the M3 plan installs it; no other dependency is added by M3. Metadata-only screening, same caveats as below.
+- `@xterm/addon-serialize` 0.13.0 declares the MIT license and a peer dependency of `@xterm/xterm ^5.0.0`, which matches the installed 5.5. Later versions target xterm 6 and must not be used until xterm is upgraded. It is now a direct JavaScript runtime dependency (M3 Task 2); no other dependency is added by M3. Metadata-only screening, same caveats as below.
 
 ## Requires verification
 
