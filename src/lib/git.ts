@@ -33,6 +33,41 @@ export interface GitStatusEntry {
 
 export interface GitStatusResult {
   entries: GitStatusEntry[];
+  /** Full OID of HEAD; null on an unborn branch. */
+  head_oid: string | null;
+}
+
+export type GitCommitGroup = "branch_only" | "shared" | "flat";
+export type GitBaseSource = "auto" | "explicit";
+export type GitHeadState = "branch" | "detached" | "unborn";
+
+export interface GitCommitInfo {
+  hash: string;
+  short_hash: string;
+  subject: string;
+  author: string;
+  /** Committer timestamp in seconds (changes on rebase or amend). */
+  commit_time: number;
+  group: GitCommitGroup;
+}
+
+export interface GitCommitCursor {
+  group: GitCommitGroup;
+  offset: number;
+  head_oid: string;
+  base_oid: string | null;
+}
+
+export interface GitCommitHistoryPage {
+  branch: string | null;
+  head_state: GitHeadState;
+  head_oid: string | null;
+  base: string | null;
+  base_source: GitBaseSource;
+  partial_history: boolean;
+  reset: boolean;
+  commits: GitCommitInfo[];
+  next_cursor: GitCommitCursor | null;
 }
 
 export interface GitFileInfo {
@@ -135,4 +170,38 @@ export async function gitListFiles(
     worktreePath,
     subpath: subpath || null,
   });
+}
+
+/**
+ * Reads one page of commit history reachable from the worktree's HEAD. `baseRef` is an
+ * explicit base branch; omit it for automatic detection. A newer request for the same
+ * worktree cancels the previous one in the backend.
+ */
+export async function gitGetCommitHistory(
+  worktreePath: string,
+  requestId: string,
+  baseRef?: string,
+  cursor?: GitCommitCursor
+): Promise<GitCommitHistoryPage> {
+  return await invoke<GitCommitHistoryPage>("git_get_commit_history", {
+    worktreePath,
+    baseRef: baseRef ?? null,
+    cursor: cursor ?? null,
+    requestId,
+  });
+}
+
+export interface GitCommitDiff {
+  diff: string;
+  truncated: boolean;
+}
+
+/** Diff of one commit against its first parent. `oid` is the full 40-hex id. */
+export async function gitGetCommitDiff(worktreePath: string, oid: string): Promise<GitCommitDiff> {
+  return await invoke<GitCommitDiff>("git_get_commit_diff", { worktreePath, oid });
+}
+
+/** Cancels an in-flight history request; unknown ids are ignored. */
+export async function gitCancelCommitHistory(requestId: string): Promise<void> {
+  return await invoke("git_cancel_commit_history", { requestId });
 }

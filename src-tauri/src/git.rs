@@ -163,6 +163,8 @@ pub struct GitStatusEntry {
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct GitStatusResult {
     pub entries: Vec<GitStatusEntry>,
+    /// Full OID of `HEAD`; `None` on an unborn branch.
+    pub head_oid: Option<String>,
 }
 
 /// Parses the output of `git status --porcelain=v2 -z`.
@@ -246,7 +248,412 @@ pub fn parse_status_porcelain_v2_z(input: &[u8]) -> Result<GitStatusResult, Stri
             _ => return Err(format!("unrecognised status record '{line}'")),
         }
     }
-    Ok(GitStatusResult { entries })
+    Ok(GitStatusResult { entries, head_oid: None })
+}
+
+#[derive(Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitCommitGroup {
+    BranchOnly,
+    Shared,
+    Flat,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct GitCommitInfo {
+    pub hash: String,
+    pub short_hash: String,
+    pub subject: String,
+    pub author: String,
+    /// Committer timestamp (`%ct`); changes on rebase or amend.
+    pub commit_time: i64,
+    pub group: GitCommitGroup,
+}
+
+#[derive(Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct GitCommitCursor {
+    pub group: GitCommitGroup,
+    pub offset: u32,
+    pub head_oid: String,
+    pub base_oid: Option<String>,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitBaseSource {
+    Auto,
+    Explicit,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitHeadState {
+    Branch,
+    Detached,
+    Unborn,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct GitCommitHistoryPage {
+    pub branch: Option<String>,
+    pub head_state: GitHeadState,
+    pub head_oid: Option<String>,
+    pub base: Option<String>,
+    pub base_source: GitBaseSource,
+    pub partial_history: bool,
+    pub reset: bool,
+    pub commits: Vec<GitCommitInfo>,
+    pub next_cursor: Option<GitCommitCursor>,
+}
+
+/// Parses `git log/rev-list --format=%H%x00%h%x00%an%x00%ct%x00%s%x1e` output.
+/// Fields are NUL-separated and records end with `\x1e`; text is decoded lossily.
+pub fn parse_commit_history(
+    input: &[u8],
+    group: GitCommitGroup,
+) -> Result<Vec<GitCommitInfo>, String> {
+    let mut pieces: Vec<&[u8]> = input.split(|b| *b == 0x1e).collect();
+    // Whatever follows the last terminator must be blank; otherwise the output was cut short.
+    let tail = pieces.pop().unwrap_or(&[]);
+    if tail.iter().any(|b| !b.is_ascii_whitespace()) {
+        return Err("truncated commit history record".to_string());
+    }
+    let lossy = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    let mut commits = Vec::with_capacity(pieces.len());
+    for piece in pieces {
+        // `git log` separates records with a newline.
+        let start = piece
+            .iter()
+            .position(|b| !b.is_ascii_whitespace())
+            .unwrap_or(piece.len());
+        let record = &piece[start..];
+        if record.is_empty() {
+            continue;
+        }
+        let f: Vec<&[u8]> = record.splitn(5, |b| *b == 0).collect();
+        if f.len() != 5 {
+            return Err(format!(
+                "malformed commit history record '{}'",
+                lossy(record)
+            ));
+        }
+        let commit_time = lossy(f[3])
+            .parse::<i64>()
+            .map_err(|_| format!("invalid commit timestamp '{}'", lossy(f[3])))?;
+        commits.push(GitCommitInfo {
+            hash: lossy(f[0]),
+            short_hash: lossy(f[1]),
+            author: lossy(f[2]),
+            commit_time,
+            subject: lossy(f[4]),
+            group,
+        });
+    }
+    Ok(commits)
+}
+
+/// Commits per page. Provisional: it is set after measuring representative repositories
+/// (see Task 1b and the Deferred Decisions in the M2 plan).
+const COMMIT_HISTORY_PAGE_SIZE: usize = 200;
+
+const COMMIT_LOG_FORMAT: &str = "--format=%H%x00%h%x00%an%x00%ct%x00%s%x1e";
+
+/// Resolves `refname` to a full commit OID, or `None` when it does not exist.
+async fn resolve_oid(cwd: &Path, refname: &str) -> Option<String> {
+    let spec = format!("{refname}^{{commit}}");
+    let out = run_git(
+        cwd,
+        &["rev-parse", "--verify", "--quiet", "--end-of-options", &spec],
+        "git rev-parse --verify",
+    )
+    .await
+    .ok()?;
+    let oid = String::from_utf8(out).ok()?.trim().to_string();
+    (oid.len() >= 40 && oid.chars().all(|c| c.is_ascii_hexdigit())).then_some(oid)
+}
+
+/// Resolves a remote's symbolic `HEAD` (for example `origin/HEAD`) to `(label, oid)`.
+async fn remote_default_base(cwd: &Path, remote: &str) -> Option<(String, String)> {
+    let head_ref = format!("refs/remotes/{remote}/HEAD");
+    let out = run_git(cwd, &["symbolic-ref", "--quiet", &head_ref], "git symbolic-ref")
+        .await
+        .ok()?;
+    let target = String::from_utf8(out).ok()?.trim().to_string();
+    let label = target.strip_prefix("refs/remotes/")?.to_string();
+    let oid = resolve_oid(cwd, &target).await?;
+    Some((label, oid))
+}
+
+/// Automatic base detection, in the order documented in the M2 design.
+async fn detect_base(cwd: &Path, branch: &str) -> Option<(String, String)> {
+    // 1. The remote of the branch's configured upstream, via its symbolic HEAD.
+    let key = format!("branch.{branch}.remote");
+    if let Ok(out) = run_git(cwd, &["config", "--get", &key], "git config --get").await {
+        let remote = String::from_utf8_lossy(&out).trim().to_string();
+        if !remote.is_empty() && remote != "." {
+            if let Some(found) = remote_default_base(cwd, &remote).await {
+                return Some(found);
+            }
+        }
+    }
+    // 2. Exactly one configured remote with a resolvable symbolic HEAD.
+    let remotes = run_git(cwd, &["remote"], "git remote").await.unwrap_or_default();
+    let mut candidates = Vec::new();
+    for remote in String::from_utf8_lossy(&remotes).lines().filter(|l| !l.is_empty()) {
+        if let Some(found) = remote_default_base(cwd, remote).await {
+            candidates.push(found);
+        }
+    }
+    if candidates.len() == 1 {
+        return candidates.pop();
+    }
+    if candidates.len() > 1 {
+        return None; // ambiguous remote defaults: do not guess
+    }
+    // 3. A local `main` or `master`, only when exactly one of them exists.
+    let main = resolve_oid(cwd, "refs/heads/main").await;
+    let master = resolve_oid(cwd, "refs/heads/master").await;
+    match (main, master) {
+        (Some(oid), None) => Some(("main".to_string(), oid)),
+        (None, Some(oid)) => Some(("master".to_string(), oid)),
+        _ => None,
+    }
+}
+
+async fn query_commits(
+    cwd: &Path,
+    revs: &[String],
+    group: GitCommitGroup,
+    skip: usize,
+    limit: usize,
+) -> Result<Vec<GitCommitInfo>, String> {
+    let skip = skip.to_string();
+    let limit = limit.to_string();
+    let mut args: Vec<&str> = vec![
+        "log", "--topo-order", COMMIT_LOG_FORMAT, "--skip", &skip, "-n", &limit,
+        "--end-of-options",
+    ];
+    args.extend(revs.iter().map(String::as_str));
+    let out = run_git(cwd, &args, "git log").await?;
+    parse_commit_history(&out, group)
+}
+
+async fn commit_history(
+    worktree_path: &str,
+    base_ref: Option<&str>,
+    cursor: Option<&GitCommitCursor>,
+    page_size: usize,
+) -> Result<GitCommitHistoryPage, String> {
+    let cwd = Path::new(worktree_path);
+    let branch = run_git(cwd, &["symbolic-ref", "--quiet", "HEAD"], "git symbolic-ref HEAD")
+        .await
+        .ok()
+        .and_then(|o| String::from_utf8(o).ok())
+        .and_then(|r| r.trim().strip_prefix("refs/heads/").map(str::to_string));
+    let head_oid = resolve_oid(cwd, "HEAD").await;
+
+    let explicit = base_ref.is_some();
+    let base_source = if explicit { GitBaseSource::Explicit } else { GitBaseSource::Auto };
+    let mut page = GitCommitHistoryPage {
+        branch: branch.clone(),
+        head_state: GitHeadState::Branch,
+        head_oid: head_oid.clone(),
+        base: None,
+        base_source,
+        partial_history: false,
+        reset: false,
+        commits: Vec::new(),
+        next_cursor: None,
+    };
+
+    // An explicit base is validated even when the history ends up flat, so a bad value
+    // is always reported instead of being silently ignored.
+    let mut base: Option<(String, String)> = None;
+    if let Some(name) = base_ref {
+        let list = git_list_branches(worktree_path.to_string()).await?;
+        let info = list
+            .iter()
+            .find(|b| b.name == name && !b.is_remote)
+            .or_else(|| list.iter().find(|b| b.name == name && b.is_remote))
+            .ok_or_else(|| format!("base '{name}' is not an existing local or remote branch"))?;
+        let full = if info.is_remote {
+            format!("refs/remotes/{}", info.name)
+        } else {
+            format!("refs/heads/{}", info.name)
+        };
+        let oid = resolve_oid(cwd, &full)
+            .await
+            .ok_or_else(|| format!("base '{name}' does not resolve to a commit"))?;
+        base = Some((info.name.clone(), oid));
+    }
+
+    let Some(head_oid) = head_oid else {
+        // Unborn branch: nothing to list. (A detached HEAD always resolves.)
+        page.head_state = GitHeadState::Unborn;
+        page.base = base.map(|(label, _)| label);
+        return Ok(page);
+    };
+    if branch.is_none() {
+        page.head_state = GitHeadState::Detached;
+    }
+    let shallow = run_git(
+        cwd,
+        &["rev-parse", "--is-shallow-repository"],
+        "git rev-parse --is-shallow-repository",
+    )
+    .await
+    .map(|o| String::from_utf8_lossy(&o).trim() == "true")
+    .unwrap_or(false);
+    page.partial_history = shallow;
+
+    // Detached HEAD and shallow clones are listed flat; an explicit base is still reported.
+    let flat = branch.is_none() || shallow;
+    if !flat && !explicit {
+        base = detect_base(cwd, branch.as_deref().unwrap_or_default()).await;
+    }
+    page.base = base.as_ref().map(|(label, _)| label.clone());
+    let base_oid = if flat { None } else { base.map(|(_, oid)| oid) };
+
+    // Revision sets per group.
+    let mut groups: Vec<(GitCommitGroup, Vec<String>)> = Vec::new();
+    match &base_oid {
+        None => groups.push((GitCommitGroup::Flat, vec![head_oid.clone()])),
+        Some(base_oid) => {
+            groups.push((
+                GitCommitGroup::BranchOnly,
+                vec![head_oid.clone(), format!("^{base_oid}")],
+            ));
+            let out = run_git(
+                cwd,
+                &["merge-base", "--all", &head_oid, base_oid],
+                "git merge-base --all",
+            )
+            .await;
+            // Exit status 1 means the histories are unrelated: the shared group is empty.
+            let bases: Vec<String> = out
+                .map(|o| String::from_utf8_lossy(&o).lines().map(str::to_string).collect())
+                .unwrap_or_default();
+            if !bases.is_empty() {
+                groups.push((GitCommitGroup::Shared, bases));
+            }
+        }
+    }
+
+    // A cursor only pages the graph it was issued for. If HEAD, the base or the group no
+    // longer match, serve a fresh first page and tell the UI to discard what it accumulated.
+    let cursor = match cursor {
+        Some(c)
+            if c.head_oid == head_oid
+                && c.base_oid == base_oid
+                && groups.iter().any(|(g, _)| *g == c.group) =>
+        {
+            Some(c)
+        }
+        Some(_) => {
+            page.reset = true;
+            None
+        }
+        None => None,
+    };
+    let (start_group, start_offset) = match cursor {
+        Some(c) => (Some(c.group), c.offset as usize),
+        None => (None, 0),
+    };
+    let mut started = start_group.is_none();
+    let mut budget = page_size;
+    for (group, revs) in &groups {
+        let mut offset = 0;
+        if !started {
+            if Some(*group) != start_group {
+                continue;
+            }
+            started = true;
+            offset = start_offset;
+        }
+        let mut got = query_commits(cwd, revs, *group, offset, budget + 1).await?;
+        if got.len() > budget {
+            got.truncate(budget);
+            page.commits.extend(got);
+            page.next_cursor = Some(GitCommitCursor {
+                group: *group,
+                offset: (offset + budget) as u32,
+                head_oid: head_oid.clone(),
+                base_oid: base_oid.clone(),
+            });
+            break;
+        }
+        budget -= got.len();
+        page.commits.extend(got);
+    }
+    Ok(page)
+}
+
+#[tauri::command]
+pub async fn git_get_commit_history(
+    worktree_path: String,
+    base_ref: Option<String>,
+    cursor: Option<GitCommitCursor>,
+    request_id: String,
+) -> Result<GitCommitHistoryPage, String> {
+    let work = commit_history(
+        &worktree_path,
+        base_ref.as_deref(),
+        cursor.as_ref(),
+        COMMIT_HISTORY_PAGE_SIZE,
+    );
+    run_cancellable(&worktree_path, &request_id, work).await
+}
+
+/// In-flight history requests: `request_id -> (worktree, cancel signal)`.
+type InFlight = std::sync::Mutex<
+    std::collections::HashMap<String, (String, std::sync::Arc<tokio::sync::Notify>)>,
+>;
+
+fn in_flight() -> &'static InFlight {
+    static REGISTRY: std::sync::OnceLock<InFlight> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(Default::default)
+}
+
+pub const CANCELLED: &str = "commit history request cancelled";
+
+/// Runs `work`, aborting it when `request_id` is cancelled or a newer request for the same
+/// worktree starts. Dropping `work` drops the pending `git` child, which `run_git` kills
+/// (`kill_on_drop`), so no orphan process survives a discarded request.
+async fn run_cancellable<T>(
+    worktree: &str,
+    request_id: &str,
+    work: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let signal = std::sync::Arc::new(tokio::sync::Notify::new());
+    {
+        let mut map = in_flight().lock().unwrap();
+        map.retain(|_, (wt, old)| {
+            if wt == worktree {
+                old.notify_one();
+                false
+            } else {
+                true
+            }
+        });
+        map.insert(request_id.to_string(), (worktree.to_string(), signal.clone()));
+    }
+    let result = tokio::select! {
+        r = work => r,
+        _ = signal.notified() => Err(CANCELLED.to_string()),
+    };
+    let mut map = in_flight().lock().unwrap();
+    if map.get(request_id).is_some_and(|(_, s)| std::sync::Arc::ptr_eq(s, &signal)) {
+        map.remove(request_id);
+    }
+    result
+}
+
+#[tauri::command]
+pub async fn git_cancel_commit_history(request_id: String) -> Result<(), String> {
+    if let Some((_, signal)) = in_flight().lock().unwrap().remove(&request_id) {
+        signal.notify_one();
+    }
+    Ok(())
 }
 
 /// Runs `git <args>` inside `cwd` without a shell and without blocking the UI thread.
@@ -257,6 +664,7 @@ async fn run_git(cwd: &Path, args: &[&str], op: &str) -> Result<Vec<u8>, String>
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| {
@@ -436,7 +844,9 @@ pub async fn git_get_status(worktree_path: String) -> Result<GitStatusResult, St
     )
     .await
     .map_err(explain_status_error)?;
-    parse_status_porcelain_v2_z(&out)
+    let mut result = parse_status_porcelain_v2_z(&out)?;
+    result.head_oid = resolve_oid(Path::new(&worktree_path), "HEAD").await;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -665,6 +1075,94 @@ pub async fn git_get_diff(
     Ok(diff)
 }
 
+/// Cap on the text returned for one commit diff. Provisional: 1 MiB, matching the other
+/// viewer limits; revisit after real use.
+const MAX_COMMIT_DIFF_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GitCommitDiff {
+    pub diff: String,
+    pub truncated: bool,
+}
+
+fn is_full_oid(oid: &str) -> bool {
+    oid.len() == 40 && oid.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Diff of one commit against its first parent (root commits: all additions). Output is
+/// read incrementally and the Git process is killed once `max_bytes` is exceeded.
+async fn commit_diff(
+    worktree_path: &str,
+    oid: &str,
+    max_bytes: usize,
+) -> Result<GitCommitDiff, String> {
+    use tokio::io::AsyncReadExt;
+
+    if !is_full_oid(oid) {
+        return Err("commit id must be 40 lowercase hexadecimal characters".to_string());
+    }
+    let cwd = Path::new(worktree_path);
+    let spec = format!("{oid}^{{commit}}");
+    run_git(
+        cwd,
+        &["rev-parse", "--verify", "--quiet", "--end-of-options", &spec],
+        "git rev-parse --verify",
+    )
+    .await
+    .map_err(|_| format!("commit {oid} does not exist in this repository"))?;
+
+    let mut child = tokio::process::Command::new("git")
+        .args([
+            "--no-optional-locks",
+            "show",
+            "--format=",
+            "--first-parent",
+            "-m",
+            "--patch",
+            "--no-ext-diff",
+            "--no-color",
+            "--end-of-options",
+            oid,
+        ])
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("git show: failed to launch git: {e}"))?;
+    let mut stdout = child.stdout.take().ok_or("git show: no output pipe")?;
+    let mut bytes = Vec::new();
+    (&mut stdout)
+        .take(max_bytes as u64 + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|e| format!("git show: cannot read output: {e}"))?;
+    let truncated = bytes.len() > max_bytes;
+    if truncated {
+        drop(stdout);
+        let _ = child.kill().await;
+        bytes.truncate(max_bytes);
+        // Cut at a line boundary so a partial line is never shown.
+        match bytes.iter().rposition(|&b| b == b'\n') {
+            Some(i) => bytes.truncate(i + 1),
+            None => bytes.clear(),
+        }
+    } else {
+        let status = child.wait().await.map_err(|e| format!("git show: {e}"))?;
+        if !status.success() {
+            return Err("git show failed".to_string());
+        }
+    }
+    Ok(GitCommitDiff { diff: String::from_utf8_lossy(&bytes).into_owned(), truncated })
+}
+
+#[tauri::command]
+pub async fn git_get_commit_diff(worktree_path: String, oid: String) -> Result<GitCommitDiff, String> {
+    commit_diff(&worktree_path, &oid, MAX_COMMIT_DIFF_BYTES).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -863,6 +1361,71 @@ locked
 
         assert!(resolve_contained(&tmp.0, "link").is_err(), "symlink itself");
         assert!(resolve_contained(&tmp.0, "link/secret").is_err(), "through symlink");
+    }
+
+    // ---- commit history parser ----
+
+    fn rec(hash: &str, short: &str, author: &[u8], time: &str, subject: &[u8]) -> Vec<u8> {
+        let mut v = Vec::new();
+        for (i, f) in [hash.as_bytes(), short.as_bytes(), author, time.as_bytes(), subject]
+            .iter()
+            .enumerate()
+        {
+            if i > 0 {
+                v.push(0);
+            }
+            v.extend_from_slice(f);
+        }
+        v.push(0x1e);
+        v
+    }
+
+    #[test]
+    fn parses_commit_history_empty_input() {
+        assert!(parse_commit_history(b"", GitCommitGroup::Flat).unwrap().is_empty());
+        assert!(parse_commit_history(b"\n", GitCommitGroup::Flat).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parses_commit_history_multiple_records_with_unicode() {
+        let mut input = rec(&"a".repeat(40), "aaaaaaa", "Ñandú Pérez".as_bytes(), "1700000000", "fix: ¡acentos! | pipe".as_bytes());
+        input.push(b'\n'); // git log adds a newline between records
+        input.extend(rec(&"b".repeat(40), "bbbbbbb", b"Bob", "1600000000", "日本語 subject".as_bytes()));
+
+        let got = parse_commit_history(&input, GitCommitGroup::BranchOnly).expect("parse");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].hash, "a".repeat(40));
+        assert_eq!(got[0].short_hash, "aaaaaaa");
+        assert_eq!(got[0].author, "Ñandú Pérez");
+        assert_eq!(got[0].commit_time, 1_700_000_000);
+        assert_eq!(got[0].subject, "fix: ¡acentos! | pipe");
+        assert_eq!(got[0].group, GitCommitGroup::BranchOnly);
+        assert_eq!(got[1].hash, "b".repeat(40));
+        assert_eq!(got[1].author, "Bob");
+        assert_eq!(got[1].subject, "日本語 subject");
+        assert_eq!(got[1].commit_time, 1_600_000_000);
+    }
+
+    #[test]
+    fn parses_commit_history_decodes_non_utf8_lossily() {
+        let input = rec(&"c".repeat(40), "ccccccc", b"Jos\xe9", "1", b"caf\xe9 ok");
+        let got = parse_commit_history(&input, GitCommitGroup::Flat).expect("never fails the page");
+        assert_eq!(got.len(), 1);
+        assert!(got[0].author.starts_with("Jos") && got[0].author.contains('\u{fffd}'));
+        assert!(got[0].subject.contains('\u{fffd}') && got[0].subject.ends_with(" ok"));
+    }
+
+    #[test]
+    fn parses_commit_history_rejects_malformed_records() {
+        // too few fields
+        assert!(parse_commit_history(b"abc\0def\x1e", GitCommitGroup::Flat).is_err());
+        // non-numeric timestamp
+        let bad_time = rec(&"d".repeat(40), "ddddddd", b"A", "not-a-number", b"s");
+        assert!(parse_commit_history(&bad_time, GitCommitGroup::Flat).is_err());
+        // truncated: the last record has no terminator
+        let mut truncated = rec(&"e".repeat(40), "eeeeeee", b"A", "1", b"s");
+        truncated.pop();
+        assert!(parse_commit_history(&truncated, GitCommitGroup::Flat).is_err());
     }
 
     // ---- Integration tests: they drive the real `git` binary against temp repositories. ----
@@ -1371,5 +1934,503 @@ locked
 
         assert_eq!(git_get_diff(s(&repo), Some("new.txt".into()), true).await.unwrap(), "");
         assert_eq!(git_get_diff(s(&repo), Some("ignored.txt".into()), false).await.unwrap(), "");
+    }
+
+    // ---- Commit diff against the first parent ----
+
+    fn head_oid_sync(repo: &Path) -> String {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    }
+
+    async fn diff_of(repo: &Path, oid: &str) -> GitCommitDiff {
+        commit_diff(repo.to_str().unwrap(), oid, MAX_COMMIT_DIFF_BYTES)
+            .await
+            .expect("commit diff")
+    }
+
+    #[tokio::test]
+    async fn commit_diff_linear_commit() {
+        let tmp = TempDir::new("cdiff-linear");
+        let repo = init_repo(&tmp, "repo");
+        write_commit(&repo, "a.txt", "hello\n");
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(!d.truncated);
+        assert!(d.diff.contains("+++ b/a.txt") && d.diff.contains("+hello"), "{}", d.diff);
+    }
+
+    #[tokio::test]
+    async fn commit_diff_root_commit_is_all_additions() {
+        let tmp = TempDir::new("cdiff-root");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "--orphan", "other"]);
+        write_commit(&repo, "r.txt", "root\n");
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(d.diff.contains("new file mode") && d.diff.contains("+root"), "{}", d.diff);
+    }
+
+    #[tokio::test]
+    async fn commit_diff_merge_uses_first_parent_only() {
+        let tmp = TempDir::new("cdiff-merge");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "side"]);
+        write_commit(&repo, "side.txt", "from side\n");
+        git_sync(&repo, &["checkout", "-b", "feat", "main"]);
+        write_commit(&repo, "feat.txt", "from feat\n");
+        git_sync(&repo, &["merge", "--no-ff", "-m", "merge side", "side"]);
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(d.diff.contains("+from side"), "{}", d.diff);
+        assert!(!d.diff.contains("feat.txt"), "first-parent content must not repeat: {}", d.diff);
+        assert_eq!(d.diff.matches("diff --git").count(), 1, "single (non-combined) diff");
+    }
+
+    #[tokio::test]
+    async fn commit_diff_empty_commit_has_no_text() {
+        let tmp = TempDir::new("cdiff-empty");
+        let repo = init_repo(&tmp, "repo");
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(d.diff.is_empty() && !d.truncated);
+    }
+
+    #[tokio::test]
+    async fn commit_diff_binary_file_has_no_content() {
+        let tmp = TempDir::new("cdiff-binary");
+        let repo = init_repo(&tmp, "repo");
+        std::fs::write(repo.join("img.bin"), [0x89, b'P', 0, 1, 2, 3]).unwrap();
+        git_sync(&repo, &["add", "img.bin"]);
+        git_sync(&repo, &["commit", "-m", "bin"]);
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(d.diff.contains("Binary files"), "{}", d.diff);
+    }
+
+    #[tokio::test]
+    async fn commit_diff_rejects_invalid_oids() {
+        let tmp = TempDir::new("cdiff-invalid");
+        let repo = init_repo(&tmp, "repo");
+        let p = repo.to_str().unwrap();
+        let unknown = "0".repeat(40);
+        for bad in ["", "HEAD", "-x", "--output=/tmp/x", "abc", &head_oid_sync(&repo).to_uppercase(), unknown.as_str()] {
+            assert!(commit_diff(p, bad, MAX_COMMIT_DIFF_BYTES).await.is_err(), "{bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_diff_truncates_at_a_line_boundary() {
+        let tmp = TempDir::new("cdiff-trunc");
+        let repo = init_repo(&tmp, "repo");
+        write_commit(&repo, "big.txt", &"line of text\n".repeat(500));
+        let oid = head_oid_sync(&repo);
+        let d = commit_diff(repo.to_str().unwrap(), &oid, 1000).await.unwrap();
+        assert!(d.truncated && d.diff.len() <= 1000 && d.diff.ends_with('\n'));
+        let full = diff_of(&repo, &oid).await;
+        assert!(!full.truncated && full.diff.starts_with(&d.diff));
+    }
+
+    // ---- Commit history integration ----
+
+    fn commit(repo: &Path, msg: &str) {
+        git_sync(repo, &["commit", "--allow-empty", "-m", msg]);
+    }
+
+    async fn history(repo: &Path, base: Option<&str>) -> GitCommitHistoryPage {
+        commit_history(repo.to_str().unwrap(), base, None, COMMIT_HISTORY_PAGE_SIZE)
+            .await
+            .expect("history")
+    }
+
+    fn subjects(page: &GitCommitHistoryPage, group: GitCommitGroup) -> Vec<&str> {
+        page.commits
+            .iter()
+            .filter(|c| c.group == group)
+            .map(|c| c.subject.as_str())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn commit_history_linear_branch_only_and_shared() {
+        let tmp = TempDir::new("hist-linear");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "feat"]);
+        commit(&repo, "one");
+        commit(&repo, "two");
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.branch.as_deref(), Some("feat"));
+        assert_eq!(page.head_state, GitHeadState::Branch);
+        assert_eq!(page.base.as_deref(), Some("main"));
+        assert_eq!(page.base_source, GitBaseSource::Auto);
+        assert!(!page.partial_history && page.next_cursor.is_none());
+        assert_eq!(subjects(&page, GitCommitGroup::BranchOnly), ["two", "one"]);
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["initial"]);
+        // Branch-only commits come before shared ones.
+        assert_eq!(page.commits[0].group, GitCommitGroup::BranchOnly);
+        assert_eq!(page.commits[2].group, GitCommitGroup::Shared);
+    }
+
+    #[tokio::test]
+    async fn commit_history_merged_side_branch_classified_by_reachability() {
+        let tmp = TempDir::new("hist-merge");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "side"]);
+        commit(&repo, "side work");
+        git_sync(&repo, &["checkout", "-b", "feat", "main"]);
+        commit(&repo, "feat work");
+        git_sync(&repo, &["merge", "--no-ff", "-m", "merge side", "side"]);
+
+        let page = history(&repo, None).await;
+        let only = subjects(&page, GitCommitGroup::BranchOnly);
+        assert_eq!(only.len(), 3, "{only:?}");
+        assert!(only.contains(&"side work") && only.contains(&"merge side"));
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_branch_equal_to_base_has_empty_branch_only() {
+        let tmp = TempDir::new("hist-equal");
+        let repo = init_repo(&tmp, "repo");
+        commit(&repo, "second");
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.base.as_deref(), Some("main"));
+        assert!(subjects(&page, GitCommitGroup::BranchOnly).is_empty());
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["second", "initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_without_detectable_base_is_flat() {
+        let tmp = TempDir::new("hist-nobase");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["branch", "-m", "main", "trunk"]);
+        commit(&repo, "second");
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.base, None);
+        assert_eq!(page.base_source, GitBaseSource::Auto);
+        assert_eq!(subjects(&page, GitCommitGroup::Flat), ["second", "initial"]);
+        assert!(page.commits.iter().all(|c| c.group == GitCommitGroup::Flat));
+    }
+
+    #[tokio::test]
+    async fn commit_history_stale_remote_head_does_not_become_base() {
+        let tmp = TempDir::new("hist-stale");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["branch", "-m", "main", "trunk"]);
+        git_sync(&repo, &["remote", "add", "origin", "https://example.invalid/x.git"]);
+        git_sync(&repo, &["config", "branch.trunk.remote", "origin"]);
+        git_sync(&repo, &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone"]);
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.base, None);
+        assert_eq!(subjects(&page, GitCommitGroup::Flat), ["initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_detached_head_is_flat() {
+        let tmp = TempDir::new("hist-detached");
+        let repo = init_repo(&tmp, "repo");
+        commit(&repo, "second");
+        git_sync(&repo, &["checkout", "--detach"]);
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.head_state, GitHeadState::Detached);
+        assert_eq!(page.branch, None);
+        assert_eq!(page.base, None);
+        assert_eq!(subjects(&page, GitCommitGroup::Flat), ["second", "initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_unborn_branch_is_empty() {
+        let tmp = TempDir::new("hist-unborn");
+        let repo = tmp.0.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        git_sync(&repo, &["init", "-b", "main"]);
+
+        let page = history(&repo.canonicalize().unwrap(), None).await;
+        assert_eq!(page.head_state, GitHeadState::Unborn);
+        assert_eq!(page.head_oid, None);
+        assert!(page.commits.is_empty() && page.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn commit_history_shallow_clone_is_flat_and_partial() {
+        let tmp = TempDir::new("hist-shallow");
+        let src = init_repo(&tmp, "src");
+        commit(&src, "second");
+        commit(&src, "third");
+        let url = format!("file://{}", src.display());
+        git_sync(&tmp.0, &["clone", "--depth", "1", &url, "clone"]);
+
+        let page = history(&tmp.0.join("clone").canonicalize().unwrap(), None).await;
+        assert!(page.partial_history);
+        assert_eq!(page.base, None, "no separator in a shallow repository");
+        assert_eq!(subjects(&page, GitCommitGroup::Flat), ["third"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_status_reports_head_oid() {
+        let tmp = TempDir::new("hist-status");
+        let repo = init_repo(&tmp, "repo");
+        let status = git_get_status(repo.to_string_lossy().into_owned()).await.unwrap();
+        let page = history(&repo, None).await;
+        assert_eq!(status.head_oid.as_deref().map(str::len), Some(40));
+        assert_eq!(status.head_oid, page.head_oid);
+
+        let empty = tmp.0.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        git_sync(&empty, &["init", "-b", "main"]);
+        let status = git_get_status(empty.to_string_lossy().into_owned()).await.unwrap();
+        assert_eq!(status.head_oid, None);
+    }
+
+    // ---- Commit history: pagination, reset, explicit base, cancellation ----
+
+    async fn page_at(
+        repo: &Path,
+        base: Option<&str>,
+        cursor: Option<&GitCommitCursor>,
+        size: usize,
+    ) -> GitCommitHistoryPage {
+        commit_history(repo.to_str().unwrap(), base, cursor, size)
+            .await
+            .expect("history page")
+    }
+
+    fn write_commit(repo: &Path, file: &str, msg: &str) {
+        std::fs::write(repo.join(file), msg).unwrap();
+        git_sync(repo, &["add", file]);
+        git_sync(repo, &["commit", "-m", msg]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_pagination_has_no_gaps_or_duplicates() {
+        let tmp = TempDir::new("hist-pages");
+        let repo = init_repo(&tmp, "repo");
+        commit(&repo, "m2");
+        commit(&repo, "m3");
+        git_sync(&repo, &["checkout", "-b", "feat"]);
+        for i in 1..=4 {
+            commit(&repo, &format!("f{i}"));
+        }
+        let full = page_at(&repo, None, None, 100).await;
+        assert_eq!(full.commits.len(), 7);
+        for size in [1usize, 2, 3, 4, 5, 7] {
+            let mut hashes = Vec::new();
+            let mut groups = Vec::new();
+            let mut cursor = None;
+            loop {
+                let p = page_at(&repo, None, cursor.as_ref(), size).await;
+                assert!(!p.reset);
+                assert!(p.commits.len() <= size);
+                hashes.extend(p.commits.iter().map(|c| c.hash.clone()));
+                groups.extend(p.commits.iter().map(|c| c.group));
+                cursor = p.next_cursor;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            let expected: Vec<_> = full.commits.iter().map(|c| c.hash.clone()).collect();
+            assert_eq!(hashes, expected, "page size {size}");
+            let expected_groups: Vec<_> = full.commits.iter().map(|c| c.group).collect();
+            assert_eq!(groups, expected_groups, "page size {size}");
+        }
+        // An exact multiple must not leave a dangling empty page.
+        let last = page_at(&repo, None, None, 7).await;
+        assert!(last.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn commit_history_base_ahead_and_diverged() {
+        let tmp = TempDir::new("hist-ahead");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "feat"]);
+        git_sync(&repo, &["checkout", "main"]);
+        commit(&repo, "main2");
+        // Base ahead of HEAD: nothing branch-only; shared is HEAD's own ancestry.
+        git_sync(&repo, &["checkout", "feat"]);
+        let page = history(&repo, None).await;
+        assert!(subjects(&page, GitCommitGroup::BranchOnly).is_empty());
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["initial"]);
+        // Diverged: feat has its own commit and main moved on; main2 must not appear.
+        commit(&repo, "feat1");
+        let page = history(&repo, None).await;
+        assert_eq!(subjects(&page, GitCommitGroup::BranchOnly), ["feat1"]);
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_unrelated_histories_have_empty_shared_group() {
+        let tmp = TempDir::new("hist-unrelated");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "--orphan", "other"]);
+        commit(&repo, "orphan root");
+        let page = history(&repo, None).await;
+        assert_eq!(page.base.as_deref(), Some("main"));
+        assert_eq!(subjects(&page, GitCommitGroup::BranchOnly), ["orphan root"]);
+        assert!(subjects(&page, GitCommitGroup::Shared).is_empty());
+        assert!(page.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn commit_history_criss_cross_uses_all_merge_bases() {
+        let tmp = TempDir::new("hist-crisscross");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "b1"]);
+        commit(&repo, "B1");
+        git_sync(&repo, &["checkout", "-b", "b2", "main"]);
+        commit(&repo, "B2");
+        git_sync(&repo, &["merge", "--no-ff", "-m", "M2", "b1"]);
+        git_sync(&repo, &["checkout", "b1"]);
+        git_sync(&repo, &["merge", "--no-ff", "-m", "M1", "b2^1"]);
+
+        let page = history(&repo, Some("b2")).await;
+        assert_eq!(subjects(&page, GitCommitGroup::BranchOnly), ["M1"]);
+        let mut shared = subjects(&page, GitCommitGroup::Shared);
+        shared.sort();
+        assert_eq!(shared, ["B1", "B2", "initial"], "both merge bases contribute");
+    }
+
+    #[tokio::test]
+    async fn commit_history_squash_merged_branch_stays_branch_only() {
+        let tmp = TempDir::new("hist-squash");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "feat"]);
+        write_commit(&repo, "a.txt", "feat a");
+        write_commit(&repo, "b.txt", "feat b");
+        git_sync(&repo, &["checkout", "main"]);
+        git_sync(&repo, &["merge", "--squash", "feat"]);
+        git_sync(&repo, &["commit", "-m", "squashed"]);
+        git_sync(&repo, &["checkout", "feat"]);
+
+        let page = history(&repo, None).await;
+        assert_eq!(subjects(&page, GitCommitGroup::BranchOnly), ["feat b", "feat a"]);
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_cursor_mismatch_resets_to_first_page() {
+        let tmp = TempDir::new("hist-reset");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "feat"]);
+        commit(&repo, "f1");
+        commit(&repo, "f2");
+        commit(&repo, "f3");
+
+        let first = page_at(&repo, None, None, 2).await;
+        let cursor = first.next_cursor.clone().expect("more pages");
+        assert!(!first.reset);
+
+        // Same state: the cursor continues.
+        let second = page_at(&repo, None, Some(&cursor), 2).await;
+        assert!(!second.reset);
+        assert_eq!(subjects(&second, GitCommitGroup::BranchOnly), ["f1"]);
+
+        // HEAD advances: fresh first page plus reset.
+        commit(&repo, "f4");
+        let after_head = page_at(&repo, None, Some(&cursor), 2).await;
+        assert!(after_head.reset);
+        assert_eq!(after_head.commits[0].subject, "f4");
+        assert_eq!(after_head.commits.len(), 2);
+
+        // Base advances: also a reset.
+        let cursor = after_head.next_cursor.clone().expect("more pages");
+        git_sync(&repo, &["checkout", "main"]);
+        commit(&repo, "main2");
+        git_sync(&repo, &["checkout", "feat"]);
+        let after_base = page_at(&repo, None, Some(&cursor), 2).await;
+        assert!(after_base.reset);
+        assert_eq!(after_base.commits[0].subject, "f4");
+    }
+
+    #[tokio::test]
+    async fn commit_history_explicit_base_overrides_detection() {
+        let tmp = TempDir::new("hist-explicit");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "develop"]);
+        commit(&repo, "dev1");
+        git_sync(&repo, &["checkout", "-b", "feat"]);
+        commit(&repo, "f1");
+        // origin/HEAD points at main, as in a gitflow repository.
+        git_sync(&repo, &["remote", "add", "origin", "https://example.invalid/x.git"]);
+        git_sync(&repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+        git_sync(&repo, &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+        git_sync(&repo, &["config", "branch.feat.remote", "origin"]);
+
+        let auto = history(&repo, None).await;
+        assert_eq!(auto.base.as_deref(), Some("origin/main"));
+        assert_eq!(auto.base_source, GitBaseSource::Auto);
+        assert_eq!(subjects(&auto, GitCommitGroup::BranchOnly), ["f1", "dev1"]);
+
+        let explicit = history(&repo, Some("develop")).await;
+        assert_eq!(explicit.base.as_deref(), Some("develop"));
+        assert_eq!(explicit.base_source, GitBaseSource::Explicit);
+        assert_eq!(subjects(&explicit, GitCommitGroup::BranchOnly), ["f1"]);
+        assert_eq!(subjects(&explicit, GitCommitGroup::Shared), ["dev1", "initial"]);
+
+        // A remote branch is also a valid explicit base.
+        let remote = history(&repo, Some("origin/main")).await;
+        assert_eq!(remote.base.as_deref(), Some("origin/main"));
+        assert_eq!(remote.base_source, GitBaseSource::Explicit);
+    }
+
+    #[tokio::test]
+    async fn commit_history_rejects_invalid_explicit_base() {
+        let tmp = TempDir::new("hist-badbase");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["tag", "v1"]);
+        let path = repo.to_str().unwrap();
+        for bad in ["nope", "v1", "HEAD", "--all", "refs/heads/main", ""] {
+            let r = commit_history(path, Some(bad), None, 10).await;
+            assert!(r.is_err(), "base {bad:?} must be rejected, got {r:?}");
+        }
+        // The valid name still works and no state leaked from the failures.
+        assert_eq!(history(&repo, Some("main")).await.base.as_deref(), Some("main"));
+    }
+
+    #[tokio::test]
+    async fn commit_history_dash_prefixed_ref_is_not_an_option() {
+        let tmp = TempDir::new("hist-dash");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "feat"]);
+        commit(&repo, "f1");
+        // A remote named `-r` yields the branch name `-r/main`.
+        git_sync(&repo, &["update-ref", "refs/remotes/-r/main", "main"]);
+
+        let page = history(&repo, Some("-r/main")).await;
+        assert_eq!(page.base.as_deref(), Some("-r/main"));
+        assert_eq!(subjects(&page, GitCommitGroup::BranchOnly), ["f1"]);
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_cancel_and_supersede_abort_the_pending_work() {
+        use std::time::Duration;
+        let slow = || async {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            Ok::<u8, String>(1)
+        };
+
+        // Explicit cancellation by request id.
+        let task = tokio::spawn(run_cancellable("/wt/cancel", "req-a", slow()));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        git_cancel_commit_history("req-a".to_string()).await.unwrap();
+        let r = tokio::time::timeout(Duration::from_secs(5), task).await.expect("aborted").unwrap();
+        assert_eq!(r, Err(CANCELLED.to_string()));
+
+        // A newer request for the same worktree supersedes the older one.
+        let old = tokio::spawn(run_cancellable("/wt/supersede", "req-old", slow()));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let newer = run_cancellable("/wt/supersede", "req-new", async { Ok::<u8, String>(2) }).await;
+        assert_eq!(newer, Ok(2));
+        let r = tokio::time::timeout(Duration::from_secs(5), old).await.expect("aborted").unwrap();
+        assert_eq!(r, Err(CANCELLED.to_string()));
+
+        // Other worktrees are untouched.
+        let other = run_cancellable("/wt/other", "req-o", async { Ok::<u8, String>(3) }).await;
+        assert_eq!(other, Ok(3));
+        assert!(in_flight().lock().unwrap().is_empty() || !in_flight().lock().unwrap().contains_key("req-o"));
     }
 }
