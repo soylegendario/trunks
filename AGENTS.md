@@ -13,7 +13,7 @@ When starting a new session, **every agent MUST perform the following steps in o
 1. **Read this file (`AGENTS.md`)** to review operating rules and constraints.
 2. **Consult the current project status**:
    - Review the "Current Project Status and Roadmap" section in this file ([`AGENTS.md`](AGENTS.md)).
-   - Review the active plan in [`docs/superpowers/plans/`](docs/superpowers/plans/) (currently [`docs/superpowers/plans/2026-11-22-m2-git-history-and-terminal-continuity.md`](docs/superpowers/plans/2026-11-22-m2-git-history-and-terminal-continuity.md)).
+   - Review the active plan in [`docs/superpowers/plans/`](docs/superpowers/plans/) (currently [`docs/superpowers/plans/2026-11-22-m3-terminal-snapshots.md`](docs/superpowers/plans/2026-11-22-m3-terminal-snapshots.md); M2 plan is complete).
 3. **Identify the immediate task**:
    - Locate the first pending item (`- [ ]`) in the active plan.
    - Contrast requirements with [`docs/spec.md`](docs/spec.md), [`docs/superpowers/specs/2026-11-22-m2-git-history-and-terminal-continuity-design.md`](docs/superpowers/specs/2026-11-22-m2-git-history-and-terminal-continuity-design.md), and the corresponding ADR in [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md).
@@ -72,7 +72,7 @@ Every agent must respect the principles defined in [`docs/intent.md`](docs/inten
   - [x] **M1 - Task 4 Completed:** Read-only right inspector panel (`InspectorPanel`, `GitStatusView`, `DiffViewer`, `FileTree`) with polling; Git status grouped by collapsible folders; files and diffs opened as central read-only tabs (`FileViewer`, `git_read_file`); resizable panels with shortcuts `Cmd+B` / `Cmd+L`.
   - [x] **M1 - Task 5 Completed:** Acceptance criteria `AC-M1-01` through `AC-M1-08` validated manually by user; `npm run check`, `build`, `test:unit` (16), and `cargo test` (43) all pass. Results documented in `docs/milestones/m1-results.md`.
   - [x] **M2 Completed:** Commit history tab (grouping, base selection, pagination, cancellation), first-parent commit diff tabs, per-worktree inspector tab, and macOS snapshot spike (`docs/milestones/m2-snapshot-spike-results.md`). `npm run check`, `build`, `test:unit` (26), and `cargo test` (73) pass; manual pass reported OK by user. Results in `docs/milestones/m2-results.md`.
-- **Next Objective:** Merge `feat/m2-git-history`, then decide whether to pursue terminal snapshot persistence (spike recommends xterm serialization with privacy controls first) and define the next milestone. Windows/Linux validation remains deferred until external testers are available.
+- **Next Objective:** Review the M3 design ([`docs/superpowers/specs/2026-11-22-m3-terminal-snapshots-design.md`](docs/superpowers/specs/2026-11-22-m3-terminal-snapshots-design.md)) and plan (opt-in xterm-serialized terminal snapshots stored as per-tab files), then start Task 1 (backend snapshot store). `feat/m2-git-history` is still pending merge into `main`. Windows/Linux validation remains deferred until external testers are available.
 
 ---
 
