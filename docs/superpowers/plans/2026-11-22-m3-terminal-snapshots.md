@@ -42,13 +42,13 @@
 - [x] Pure logic in `src/lib/snapshot-logic.ts` (debounce decision, separator text, capture triggers) with unit tests.
 - [x] `TerminalSession`: load addon; capture on process exit, debounced while dirty, and on app close; restore on mount of a restored tab with separator and mode reset.
 - [x] Delete snapshot in `closeTab` and on worktree/project removal; run reconcile at startup with live tab ids.
-- [ ] `npm run check`, `npm run build`, `npm run test:unit`; commit `feat: capture and restore terminal snapshots`.
+- [x] `npm run check`, `npm run build`, `npm run test:unit`; commit `feat: capture and restore terminal snapshots`.
 
 ## Task 3: Settings and privacy notice
 
-- [ ] Settings entry with off-by-default toggle, risk confirmation dialog, deletion confirmation on disable, `Clear all history` button.
-- [ ] Persist flag via db commands; frontend state reflects backend as source of truth.
-- [ ] Check, build, unit tests; commit `feat: terminal history setting with privacy notice`.
+- [x] Settings entry with off-by-default toggle, risk confirmation dialog, deletion confirmation on disable, `Clear all history` button.
+- [x] Persist flag via db commands; frontend state reflects backend as source of truth.
+- [x] Check, build, unit tests; commit `feat: terminal history setting with privacy notice`.
 
 ## Task 4: Measurement and limits
 

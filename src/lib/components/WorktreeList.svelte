@@ -8,6 +8,7 @@
   import CreateWorktreeModal from "./CreateWorktreeModal.svelte";
   import RemoveWorktreeModal from "./RemoveWorktreeModal.svelte";
   import RemoveProjectModal from "./RemoveProjectModal.svelte";
+  import SettingsModal from "./SettingsModal.svelte";
 
   let {
     onOpenTerminal,
@@ -38,6 +39,7 @@
   let createWorktreeOpen = $state(false);
   let removeWorktreeOpen = $state(false);
   let removeProjectOpen = $state(false);
+  let settingsOpen = $state(false);
 
   let targetProject = $state<ProjectState | null>(null);
   let targetWorktree = $state<GitWorktreeInfo | null>(null);
@@ -122,6 +124,14 @@
         title="Refresh all projects & worktrees"
       >
         ↻
+      </button>
+      <button
+        class="icon-btn"
+        onclick={() => (settingsOpen = true)}
+        title="Settings"
+        aria-label="Settings"
+      >
+        ⚙
       </button>
       <button
         class="action-btn-sm primary"
@@ -317,6 +327,8 @@
   worktree={targetWorktree}
   onRemoved={(path) => onWorktreeRemoved?.(path)}
 />
+
+<SettingsModal bind:isOpen={settingsOpen} />
 
 <RemoveProjectModal
   bind:isOpen={removeProjectOpen}
