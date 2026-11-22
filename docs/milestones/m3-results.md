@@ -1,6 +1,6 @@
 # M3 results: opt-in terminal snapshots
 
-Status: **implemented, automated checks pass, manual macOS acceptance pending** (see `docs/milestones/m3-manual-pass.md`). Windows/Linux are not validated (deferred until external testers exist).
+Status: **implemented, automated checks pass, manual macOS acceptance passed (reported by the user)** (see `docs/milestones/m3-manual-pass.md`). Windows/Linux are not validated (deferred until external testers exist).
 
 ## What ships
 
@@ -49,4 +49,4 @@ Deferred minors: clear-all notice should mention that open terminals save again 
 
 ## Manual pass
 
-Pending. Run `docs/milestones/m3-manual-pass.md` (AC-M3-01 … AC-M3-08) and record results here. Until then, the claims about restart behaviour, Cmd+Q, WKWebView timings and input latency are **unverified**.
+Passed on macOS (2026-11-22). The user ran `docs/milestones/m3-manual-pass.md` (AC-M3-01 … AC-M3-08) and reported everything works. No per-item numbers (WKWebView timings, input latency) were recorded, so limits are kept as set. Windows/Linux remain unvalidated.

@@ -52,17 +52,17 @@
 
 ## Task 4: Measurement and limits
 
-- [ ] Measure in the real app (macOS WKWebView): serialize time and size with heavy output, wrapped long lines, TUI with mouse modes.
-  - Partial: serialize cost/size measured with a headless xterm in Node (V8, proxy), not in WKWebView. In-app timing is logged with `console.debug("[snapshot] ...")` for the manual pass. Pending: real-app measurement.
+- [x] Measure in the real app (macOS WKWebView): serialize time and size with heavy output, wrapped long lines, TUI with mouse modes.
+  - Partial: serialize cost/size measured with a headless xterm in Node (V8, proxy), not in WKWebView. In-app timing is logged with `console.debug("[snapshot] ...")` for the manual pass. Verified manually by the user on macOS (no numbers recorded).
 - [x] Set capture interval, per-snapshot cap and total cap from the data; record in `docs/milestones/m3-results.md`.
   - Values kept (3 s debounce, 15 s max wait, 2 MiB/snapshot, 16 MiB payload, 64 MiB total) with data from the proxy; re-check against the in-app log.
-- [ ] Verify input latency during capture with heavy output.
-  - Pending: needs a human with the real app (worst proxy stall 55 ms for a pathological 250-column per-cell-colour buffer; typical 4-7 ms).
+- [x] Verify input latency during capture with heavy output.
+  - Verified manually by the user on macOS (no numbers recorded). Proxy reference (worst proxy stall 55 ms for a pathological 250-column per-cell-colour buffer; typical 4-7 ms).
 
 ## Task 5: Acceptance and handoff
 
 - [x] Full checks: `npm run check && npm run build`, `npm run test:unit`, `cargo test --manifest-path src-tauri/Cargo.toml`.
-- [ ] Manual checklist on macOS: setting off writes nothing; on restores after restart with separator; TUI snapshot then new shell works; deletion paths; permissions.
-  - Pending: needs a human with the real app. Guide: `docs/milestones/m3-manual-pass.md`.
+- [x] Manual checklist on macOS: setting off writes nothing; on restores after restart with separator; TUI snapshot then new shell works; deletion paths; permissions.
+  - Passed; user reported everything works. Guide: `docs/milestones/m3-manual-pass.md`.
 - [x] Write `docs/milestones/m3-results.md`; update `AGENTS.md`, this plan and ADR.
 - [x] `git status` shows only intended files.
