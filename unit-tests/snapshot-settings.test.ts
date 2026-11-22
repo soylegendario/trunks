@@ -8,6 +8,7 @@ import {
   applyDisable,
   applyEnable,
   stepForToggle,
+  type SettingsDeps,
 } from "../src/lib/snapshot-settings-logic.ts";
 
 describe("stepForToggle", () => {
@@ -37,69 +38,89 @@ describe("notices", () => {
   });
 });
 
+function deps(over: Partial<SettingsDeps> = {}, calls: string[] = []): SettingsDeps {
+  return {
+    setEnabled: async (v) => void calls.push(`set:${v}`),
+    clearAll: async () => void calls.push("clear"),
+    disableAndClear: async () => void calls.push("disable-and-clear"),
+    readEnabled: async () => {
+      calls.push("read");
+      return false;
+    },
+    ...over,
+  };
+}
+
 describe("applyEnable", () => {
   it("turns the flag on and reports success", async () => {
     const calls: string[] = [];
-    const r = await applyEnable({
-      setEnabled: async (v) => void calls.push(`set:${v}`),
-      clearAll: async () => void calls.push("clear"),
-    });
+    const r = await applyEnable(deps({}, calls));
     assert.deepEqual(calls, ["set:true"]);
     assert.deepEqual(r, { ok: true, enabled: true });
   });
   it("reports failure and stays off when the backend rejects", async () => {
-    const r = await applyEnable({
-      setEnabled: async () => {
-        throw new Error("db down");
-      },
-      clearAll: async () => {},
-    });
+    const r = await applyEnable(
+      deps({
+        setEnabled: async () => {
+          throw new Error("db down");
+        },
+      })
+    );
     assert.deepEqual(r, { ok: false, enabled: false, error: "Error: db down" });
   });
 });
 
 describe("applyDisable", () => {
-  it("disables first so no new snapshot can be written, then deletes everything", async () => {
+  it("uses the single atomic backend step, never flag-then-clear as two calls", async () => {
     const calls: string[] = [];
-    const r = await applyDisable({
-      setEnabled: async (v) => void calls.push(`set:${v}`),
-      clearAll: async () => void calls.push("clear"),
-    });
-    assert.deepEqual(calls, ["set:false", "clear"]);
+    const r = await applyDisable(deps({}, calls));
+    assert.deepEqual(calls, ["disable-and-clear"]);
     assert.deepEqual(r, { ok: true, enabled: false });
   });
-  it("stays disabled and surfaces the error when deletion fails", async () => {
-    const r = await applyDisable({
-      setEnabled: async () => {},
-      clearAll: async () => {
-        throw new Error("io");
-      },
-    });
+  it("re-reads the real flag from the backend when the step fails", async () => {
+    const r = await applyDisable(
+      deps({
+        disableAndClear: async () => {
+          throw new Error("io");
+        },
+        readEnabled: async () => false, // flag was turned off, deletion failed
+      })
+    );
     assert.equal(r.ok, false);
     assert.equal(r.enabled, false);
     assert.match(r.error ?? "", /io/);
   });
-  it("does not delete anything when the flag could not be turned off", async () => {
-    const calls: string[] = [];
-    const r = await applyDisable({
-      setEnabled: async () => {
-        throw new Error("db down");
-      },
-      clearAll: async () => void calls.push("clear"),
-    });
-    assert.deepEqual(calls, []);
+  it("shows the flag as still on when the backend says so", async () => {
+    const r = await applyDisable(
+      deps({
+        disableAndClear: async () => {
+          throw new Error("db down");
+        },
+        readEnabled: async () => true,
+      })
+    );
+    assert.equal(r.enabled, true);
+  });
+  it("assumes on (the safe display) when even the re-read fails", async () => {
+    const r = await applyDisable(
+      deps({
+        disableAndClear: async () => {
+          throw new Error("x");
+        },
+        readEnabled: async () => {
+          throw new Error("y");
+        },
+      })
+    );
     assert.equal(r.ok, false);
-    assert.equal(r.enabled, true, "flag is still on, so the UI must keep showing it on");
+    assert.equal(r.enabled, true);
   });
 });
 
 describe("applyClearAll", () => {
   it("deletes snapshots without touching the setting", async () => {
     const calls: string[] = [];
-    const r = await applyClearAll({
-      setEnabled: async (v) => void calls.push(`set:${v}`),
-      clearAll: async () => void calls.push("clear"),
-    });
+    const r = await applyClearAll(deps({}, calls));
     assert.deepEqual(calls, ["clear"]);
     assert.equal(r.ok, true);
   });

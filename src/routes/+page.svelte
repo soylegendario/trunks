@@ -305,7 +305,7 @@
   /** Flushes pending snapshots, bounded so closing the window can never hang on it. */
   async function flushSnapshots() {
     if (!isSnapshotsEnabledLocal()) return;
-    const flush = Promise.all([...sessions.values()].map((s) => s.captureNow()));
+    const flush = Promise.all([...sessions.values()].map((s) => s.flushSnapshot()));
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, 2000));
     await Promise.race([flush, timeout]).catch(() => {});
   }

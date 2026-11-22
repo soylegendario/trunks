@@ -10,6 +10,7 @@ import {
   shouldRestoreSnapshot,
   snapshotHasAltScreen,
   MODE_RESET,
+  restoreSnapshotGuarded,
 } from "../src/lib/snapshot-logic.ts";
 
 describe("captureDelayMs", () => {
@@ -91,5 +92,87 @@ describe("alternate screen handling", () => {
     assert.ok(newShellPrelude(true).startsWith("\x1b[?1049l"));
     assert.ok(!newShellPrelude(false).includes("\x1b[?1049l"));
     assert.ok(newShellPrelude(false).includes(MODE_RESET));
+  });
+});
+
+describe("MODE_RESET covers every mode addon-serialize can emit", () => {
+  it("soft-resets the terminal and explicitly turns off mouse, focus and paste reporting", () => {
+    for (const m of [
+      "\x1b[!p", // DECSTR: insert, origin, autowrap, cursor keys, keypad...
+      "\x1b[?9l",
+      "\x1b[?1000l",
+      "\x1b[?1002l",
+      "\x1b[?1003l",
+      "\x1b[?1004l",
+      "\x1b[?1005l",
+      "\x1b[?1006l",
+      "\x1b[?1015l",
+      "\x1b[?2004l",
+      "\x1b[?66l",
+      "\x1b[?45l",
+      "\x1b[?6l",
+      "\x1b[?7h",
+      "\x1b[4l",
+      "\x1b[?25h",
+    ]) {
+      assert.ok(MODE_RESET.includes(m), `missing ${JSON.stringify(m)}`);
+    }
+  });
+});
+
+describe("restoreSnapshotGuarded", () => {
+  const snap = { data: "old", created_at: 1795356180 };
+  it("writes the restore sequence when the tab is still a stopped restored tab", async () => {
+    const written: string[] = [];
+    const r = await restoreSnapshotGuarded({
+      load: async () => snap,
+      stillRestorable: () => true,
+      write: async (seq) => void written.push(seq),
+    });
+    assert.equal(written.length, 1);
+    assert.ok(written[0].startsWith("old\r\n"));
+    assert.equal(r.restored, true);
+  });
+  it("does not write into a live shell when the user started it during the load", async () => {
+    let restorable = true;
+    const written: string[] = [];
+    const r = await restoreSnapshotGuarded({
+      load: async () => {
+        restorable = false; // Start was clicked while the snapshot was loading
+        return snap;
+      },
+      stillRestorable: () => restorable,
+      write: async (seq) => void written.push(seq),
+    });
+    assert.deepEqual(written, []);
+    assert.equal(r.restored, false);
+  });
+  it("reports the alternate screen of a TUI snapshot", async () => {
+    const r = await restoreSnapshotGuarded({
+      load: async () => ({ data: "a\x1b[?1049hb", created_at: 1 }),
+      stillRestorable: () => true,
+      write: async () => {},
+    });
+    assert.equal(r.hasAltScreen, true);
+  });
+  it("swallows load failures and restores nothing", async () => {
+    const r = await restoreSnapshotGuarded({
+      load: async () => {
+        throw new Error("io");
+      },
+      stillRestorable: () => true,
+      write: async () => {
+        assert.fail("must not write");
+      },
+    });
+    assert.equal(r.restored, false);
+  });
+  it("restores nothing when there is no snapshot", async () => {
+    const r = await restoreSnapshotGuarded({
+      load: async () => null,
+      stillRestorable: () => true,
+      write: async () => assert.fail("must not write"),
+    });
+    assert.equal(r.restored, false);
   });
 });

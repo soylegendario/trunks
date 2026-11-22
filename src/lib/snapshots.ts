@@ -52,6 +52,12 @@ export async function snapshotClearAll(): Promise<void> {
   await invoke("snapshot_clear_all");
 }
 
+/** Turns history off and deletes all snapshots atomically in the backend. */
+export async function snapshotsDisableAndClear(): Promise<void> {
+  await invoke("snapshots_disable_and_clear");
+  enabledLocal = false;
+}
+
 export async function snapshotReconcile(liveTabIds: string[]): Promise<number> {
   return await invoke<number>("snapshot_reconcile", { liveTabIds });
 }

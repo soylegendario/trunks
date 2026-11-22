@@ -134,6 +134,7 @@ impl SnapshotStore {
         Ok(())
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn save(
         &self,
         enabled: bool,
@@ -143,9 +144,20 @@ impl SnapshotStore {
         data: &str,
         now: i64,
     ) -> Result<(), String> {
-        if !enabled {
-            return Err("Terminal history is disabled".to_string());
-        }
+        self.save_checked(|| Ok(enabled), tab_id, cols, rows, data, now)
+    }
+
+    /// Like `save`, but the opt-in flag is evaluated while holding the store lock, so a save that
+    /// queued behind a disable-and-clear can never write after it.
+    pub fn save_checked<F: FnOnce() -> Result<bool, String>>(
+        &self,
+        is_enabled: F,
+        tab_id: &str,
+        cols: u16,
+        rows: u16,
+        data: &str,
+        now: i64,
+    ) -> Result<(), String> {
         validate_tab_id(tab_id)?;
         if data.len() > self.limits.payload_bytes {
             return Err("Snapshot payload too large".to_string());
@@ -161,6 +173,9 @@ impl SnapshotStore {
         content.extend_from_slice(body.as_bytes());
 
         let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
+        if !is_enabled()? {
+            return Err("Terminal history is disabled".to_string());
+        }
         self.ensure_dir()?;
         let final_path = self.file_path(tab_id);
         let tmp_path = self.dir.join(format!("{}.{}", tab_id, TMP_SUFFIX));
@@ -209,7 +224,22 @@ impl SnapshotStore {
 
     pub fn clear_all(&self) -> Result<(), String> {
         let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
-                for (path, _) in self.owned_files()? {
+        self.clear_all_locked()
+    }
+
+    /// Runs `set_flag_off` and then deletes every snapshot as one step under the store lock.
+    /// Nothing is deleted if the flag could not be turned off.
+    pub fn disable_and_clear<F: FnOnce() -> Result<(), String>>(
+        &self,
+        set_flag_off: F,
+    ) -> Result<(), String> {
+        let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
+        set_flag_off()?;
+        self.clear_all_locked()
+    }
+
+    fn clear_all_locked(&self) -> Result<(), String> {
+        for (path, _) in self.owned_files()? {
             std::fs::remove_file(&path).map_err(|e| io_err("clear", e))?;
         }
         Ok(())
@@ -294,12 +324,11 @@ pub fn save_with_opt_in(
     rows: u16,
     data: &str,
 ) -> Result<(), String> {
-    let enabled = db.snapshots_enabled()?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
-    store.save(enabled, tab_id, cols, rows, data, now)
+    store.save_checked(|| db.snapshots_enabled(), tab_id, cols, rows, data, now)
 }
 
 pub fn default_snapshot_dir(app: &AppHandle) -> PathBuf {
@@ -334,6 +363,15 @@ pub async fn snapshot_load(
 #[tauri::command]
 pub async fn snapshot_delete(store: State<'_, SnapshotStore>, tab_id: String) -> Result<(), String> {
     store.delete(&tab_id)
+}
+
+/// Turns terminal history off and deletes everything atomically with respect to queued saves.
+#[tauri::command]
+pub async fn snapshots_disable_and_clear(
+    store: State<'_, SnapshotStore>,
+    db: State<'_, DatabaseManager>,
+) -> Result<(), String> {
+    store.disable_and_clear(|| db.set_snapshots_enabled(false))
 }
 
 #[tauri::command]
@@ -601,6 +639,75 @@ mod tests {
         db.set_snapshots_enabled(false).unwrap();
         assert!(save_with_opt_in(&s, &db, ID_A, 80, 24, "later").is_err());
         assert_eq!(s.load(ID_A).unwrap().unwrap().data, "ok", "refused save must not overwrite");
+    }
+
+    #[test]
+    fn save_checked_evaluates_the_flag_while_holding_the_store_lock() {
+        let t = TempDir::new();
+        let s = t.store();
+        let mut lock_was_held = false;
+        s.save_checked(
+            || {
+                lock_was_held = s.write_lock.try_lock().is_err();
+                Ok(true)
+            },
+            ID_A, 80, 24, "x", 1,
+        )
+        .unwrap();
+        assert!(lock_was_held, "flag must be read inside the critical section");
+    }
+
+    #[test]
+    fn save_checked_refuses_and_writes_nothing_when_flag_is_off() {
+        let t = TempDir::new();
+        let s = t.store();
+        assert!(s.save_checked(|| Ok(false), ID_A, 80, 24, "secret", 1).is_err());
+        assert!(!t.snap_dir().exists());
+    }
+
+    #[test]
+    fn save_checked_propagates_flag_read_errors_and_writes_nothing() {
+        let t = TempDir::new();
+        let s = t.store();
+        assert!(s.save_checked(|| Err("db".to_string()), ID_A, 80, 24, "x", 1).is_err());
+        assert!(!t.snap_dir().exists());
+    }
+
+    #[test]
+    fn disable_and_clear_turns_flag_off_then_deletes_under_one_lock() {
+        let t = TempDir::new();
+        let s = t.store();
+        s.save(true, ID_A, 80, 24, "a", 1).unwrap();
+        let mut order = Vec::new();
+        s.disable_and_clear(|| {
+            order.push(("flag-off", t.file_count(), s.write_lock.try_lock().is_err()));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(order, vec![("flag-off", 1, true)], "flag is turned off first, inside the lock");
+        assert_eq!(t.file_count(), 0);
+    }
+
+    #[test]
+    fn disable_and_clear_does_not_delete_when_the_flag_cannot_be_turned_off() {
+        let t = TempDir::new();
+        let s = t.store();
+        s.save(true, ID_A, 80, 24, "a", 1).unwrap();
+        assert!(s.disable_and_clear(|| Err("db".to_string())).is_err());
+        assert_eq!(t.file_count(), 1);
+    }
+
+    #[test]
+    fn queued_save_after_disable_and_clear_is_refused() {
+        let t = TempDir::new();
+        let s = t.store();
+        let db = DatabaseManager::new_in_memory().unwrap();
+        db.set_snapshots_enabled(true).unwrap();
+        s.disable_and_clear(|| db.set_snapshots_enabled(false)).unwrap();
+        // A save that read "enabled" before the disable would have written here; the flag is now
+        // read under the lock, so it observes the disabled state.
+        assert!(save_with_opt_in(&s, &db, ID_A, 80, 24, "late").is_err());
+        assert_eq!(t.file_count(), 0);
     }
 
     #[cfg(unix)]

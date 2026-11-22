@@ -26,6 +26,10 @@ export const CLEAR_NOTICE =
 export interface SettingsDeps {
   setEnabled: (value: boolean) => Promise<void>;
   clearAll: () => Promise<void>;
+  /** Backend step that turns the flag off and deletes everything under one lock. */
+  disableAndClear: () => Promise<void>;
+  /** The persisted flag (source of truth). */
+  readEnabled: () => Promise<boolean>;
 }
 
 export interface SettingsResult {
@@ -44,19 +48,24 @@ export async function applyEnable(deps: SettingsDeps): Promise<SettingsResult> {
   }
 }
 
-/** Turns the flag off first (the backend then refuses new saves), then deletes what is stored. */
+/**
+ * Disables and deletes in ONE backend step: two separate calls would let a save that was already
+ * queued write a snapshot after the deletion. On failure the real flag is re-read, because the
+ * backend may have turned it off before the deletion failed.
+ */
 export async function applyDisable(deps: SettingsDeps): Promise<SettingsResult> {
   try {
-    await deps.setEnabled(false);
+    await deps.disableAndClear();
+    return { ok: true, enabled: false };
   } catch (err) {
-    return { ok: false, enabled: true, error: String(err) };
+    let enabled = true; // if the flag cannot be read, show it on: never claim history is off
+    try {
+      enabled = await deps.readEnabled();
+    } catch {
+      // keep the safe default
+    }
+    return { ok: false, enabled, error: String(err) };
   }
-  try {
-    await deps.clearAll();
-  } catch (err) {
-    return { ok: false, enabled: false, error: String(err) };
-  }
-  return { ok: true, enabled: false };
 }
 
 export async function applyClearAll(deps: SettingsDeps): Promise<{ ok: boolean; error?: string }> {

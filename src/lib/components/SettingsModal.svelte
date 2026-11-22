@@ -3,6 +3,7 @@
     getSnapshotsEnabled,
     setSnapshotsEnabled,
     snapshotClearAll,
+    snapshotsDisableAndClear,
   } from "$lib/snapshots";
   import {
     CLEAR_NOTICE,
@@ -23,7 +24,12 @@
   let message = $state<string | null>(null);
   let errorMessage = $state<string | null>(null);
 
-  const deps = { setEnabled: setSnapshotsEnabled, clearAll: snapshotClearAll };
+  const deps = {
+    setEnabled: setSnapshotsEnabled,
+    clearAll: snapshotClearAll,
+    disableAndClear: snapshotsDisableAndClear,
+    readEnabled: getSnapshotsEnabled,
+  };
 
   // The backend is the source of truth: re-read the flag every time the dialog opens.
   $effect(() => {

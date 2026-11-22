@@ -8,12 +8,10 @@ import {
   snapshotSave,
 } from "./snapshots";
 import {
-  buildRestoreSequence,
-  captureDelayMs,
+  CaptureController,
   newShellPrelude,
-  shouldCapture,
+  restoreSnapshotGuarded,
   shouldRestoreSnapshot,
-  snapshotHasAltScreen,
 } from "./snapshot-logic";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -59,13 +57,11 @@ export class TerminalSession {
   private onStatusChange?: (status: "running" | "stopped") => void;
   private fitTimer: ReturnType<typeof setTimeout> | null = null;
   private serializeAddon = new SerializeAddon();
-  // Snapshot capture state. `dirty` is only set by live output, never by restoring a snapshot, so
-  // an untouched restored tab is not re-saved with the old separator baked into its content.
-  private dirty = false;
-  private firstDirtyAt = 0;
-  private lastOutputAt = 0;
-  private captureTimer: ReturnType<typeof setTimeout> | null = null;
-  private capturing = false;
+  // Capture scheduling lives in a pure controller. Its `dirty` flag is only set by live output,
+  // never by restoring a snapshot, so an untouched restored tab is not re-saved with the old
+  // separator baked into its content.
+  private capture: CaptureController;
+  private restorePromise: Promise<void> | null = null;
   private restoredAltScreen = false;
   private showedSnapshot = false;
 
@@ -75,6 +71,13 @@ export class TerminalSession {
   ) {
     this.id = tab.id;
     this.tab = tab;
+    this.capture = new CaptureController({
+      isEnabled: isSnapshotsEnabledLocal,
+      capture: () => this.performCapture(),
+      now: () => Date.now(),
+      schedule: (fn, ms) => setTimeout(fn, ms),
+      cancel: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    });
     this.onStatusChange = onStatusChange;
 
     this.terminal = new Terminal({
@@ -142,7 +145,7 @@ export class TerminalSession {
     this.unlistenOutput = await listen<PtyOutputPayload>("pty-output", (event) => {
       if (event.payload.id === this.id && !this.isDisposed) {
         this.terminal.write(event.payload.data);
-        this.markDirty();
+        this.capture.markOutput();
       }
     });
 
@@ -153,9 +156,8 @@ export class TerminalSession {
         this.onStatusChange?.("stopped");
         // Capture once the parser has consumed the final output and the exit notice.
         this.terminal.write("\r\n\x1b[33m[Process completed]\x1b[0m\r\n", () => {
-          this.dirty = true;
-          if (this.firstDirtyAt === 0) this.firstDirtyAt = Date.now();
-          void this.captureNow();
+          this.capture.markDirtyNow();
+          void this.capture.capture();
         });
       }
     });
@@ -164,7 +166,8 @@ export class TerminalSession {
     if (this.tab.status === "running") {
       await this.startPty();
     } else if (this.tab.isRestored) {
-      await this.restoreSnapshot();
+      this.restorePromise = this.restoreSnapshot();
+      await this.restorePromise;
       this.terminal.writeln("\x1b[36m[Workspace restored] This terminal tab was restored from a previous session.\x1b[0m");
       if (this.tab.isStale) {
         this.terminal.writeln(`\x1b[33m⚠️ Stale path: '${this.tab.cwd}' (${this.tab.staleReason || "directory not found"}).\x1b[0m`);
@@ -177,6 +180,8 @@ export class TerminalSession {
 
   public async startPty() {
     try {
+      // A snapshot still loading must land (or be skipped) before the shell starts, never after.
+      if (this.restorePromise) await this.restorePromise;
       if (this.showedSnapshot) {
         // Leave a restored TUI's alternate screen and reset leftover modes before the new shell.
         this.terminal.write(newShellPrelude(this.restoredAltScreen));
@@ -204,85 +209,47 @@ export class TerminalSession {
 
   /** Shows the stored snapshot (if any) above the restored-tab notice. Never throws. */
   private async restoreSnapshot() {
-    if (
-      !shouldRestoreSnapshot({
+    const restorable = () =>
+      !this.isDisposed &&
+      shouldRestoreSnapshot({
         enabled: isSnapshotsEnabledLocal(),
         isRestored: !!this.tab.isRestored,
         status: this.tab.status,
-      })
-    ) {
-      return;
-    }
-    try {
-      const snap = await snapshotLoad(this.id);
-      if (!snap || this.isDisposed) return;
-      this.restoredAltScreen = snapshotHasAltScreen(snap.data);
-      this.showedSnapshot = true;
-      await new Promise<void>((resolve) =>
-        this.terminal.write(buildRestoreSequence(snap.data, snap.created_at), resolve)
-      );
-    } catch (err) {
-      console.warn(`Failed to restore snapshot for tab ${this.id}:`, String(err));
-    }
-  }
-
-  private markDirty() {
-    if (!isSnapshotsEnabledLocal()) return;
-    const now = Date.now();
-    if (!this.dirty) {
-      this.dirty = true;
-      this.firstDirtyAt = now;
-    }
-    this.lastOutputAt = now;
-    if (this.captureTimer) clearTimeout(this.captureTimer);
-    const delay = captureDelayMs({
-      now,
-      firstDirtyAt: this.firstDirtyAt,
-      lastOutputAt: this.lastOutputAt,
+      });
+    if (!restorable()) return;
+    const result = await restoreSnapshotGuarded({
+      load: () => snapshotLoad(this.id),
+      // Re-checked after the load: the user may have clicked Start meanwhile.
+      stillRestorable: restorable,
+      write: (seq) => new Promise<void>((resolve) => this.terminal.write(seq, resolve)),
     });
-    this.captureTimer = setTimeout(() => {
-      this.captureTimer = null;
-      void this.captureNow();
-    }, delay);
+    if (result.restored) {
+      this.showedSnapshot = true;
+      this.restoredAltScreen = result.hasAltScreen;
+    }
   }
 
-  /**
-   * Serializes the buffer and stores it. Fire-and-forget safe: failures are logged without content
-   * and never affect the terminal. Also used to flush on app close.
-   */
-  public async captureNow(): Promise<void> {
-    if (this.captureTimer) {
-      clearTimeout(this.captureTimer);
-      this.captureTimer = null;
-    }
-    if (
-      this.capturing ||
-      !shouldCapture({
-        enabled: isSnapshotsEnabledLocal(),
-        disposed: this.isDisposed,
-        dirty: this.dirty,
-      })
-    ) {
-      return;
-    }
-    this.capturing = true;
+  /** Serializes the buffer and stores it. Rejects on failure; the controller backs off. */
+  private async performCapture(): Promise<void> {
+    const t0 = performance.now();
+    // Modes are meaningless for a dead snapshot and would be replayed into the next shell.
+    const data = this.serializeAddon.serialize({ excludeModes: true });
+    const t1 = performance.now();
     try {
-      this.dirty = false;
-      this.firstDirtyAt = 0;
-      const t0 = performance.now();
-      const data = this.serializeAddon.serialize();
-      const t1 = performance.now();
       await snapshotSave(this.id, this.terminal.cols, this.terminal.rows, data);
-      // Content-free timing for the manual measurements (docs/milestones/m3-results.md).
-      console.debug(
-        `[snapshot] tab=${this.id} serialize=${(t1 - t0).toFixed(1)}ms chars=${data.length} save=${(performance.now() - t1).toFixed(1)}ms`
-      );
     } catch (err) {
-      this.dirty = true; // keep it pending so a later trigger retries
       console.warn(`Failed to capture snapshot for tab ${this.id}:`, String(err));
-    } finally {
-      this.capturing = false;
+      throw err;
     }
+    // Content-free timing for the manual measurements (docs/milestones/m3-results.md).
+    console.debug(
+      `[snapshot] tab=${this.id} serialize=${(t1 - t0).toFixed(1)}ms chars=${data.length} save=${(performance.now() - t1).toFixed(1)}ms`
+    );
+  }
+
+  /** Waits for any in-flight capture and stores the newest state (window close). */
+  public flushSnapshot(): Promise<void> {
+    return this.capture.flush();
   }
 
   public fit() {
@@ -324,10 +291,8 @@ export class TerminalSession {
 
   public async destroy() {
     this.isDisposed = true;
-    if (this.captureTimer) {
-      clearTimeout(this.captureTimer);
-      this.captureTimer = null;
-    }
+    // Wait for an in-flight save so the caller's snapshot delete cannot be overtaken by it.
+    await this.capture.dispose();
     if (this.fitTimer) {
       clearTimeout(this.fitTimer);
       this.fitTimer = null;

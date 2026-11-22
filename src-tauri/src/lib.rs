@@ -16,7 +16,7 @@ use git::{
 };
 use snapshots::{
     default_snapshot_dir, snapshot_clear_all, snapshot_delete, snapshot_load, snapshot_reconcile,
-    snapshot_save, SnapshotStore,
+    snapshot_save, snapshots_disable_and_clear, SnapshotStore,
 };
 use tauri::Manager;
 
@@ -53,6 +53,7 @@ pub fn run() {
             snapshot_load,
             snapshot_delete,
             snapshot_clear_all,
+            snapshots_disable_and_clear,
             snapshot_reconcile,
             git_validate_repo,
             git_list_worktrees,
