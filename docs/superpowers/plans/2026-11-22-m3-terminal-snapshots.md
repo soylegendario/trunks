@@ -53,8 +53,11 @@
 ## Task 4: Measurement and limits
 
 - [ ] Measure in the real app (macOS WKWebView): serialize time and size with heavy output, wrapped long lines, TUI with mouse modes.
-- [ ] Set capture interval, per-snapshot cap and total cap from the data; record in `docs/milestones/m3-results.md`.
+  - Partial: serialize cost/size measured with a headless xterm in Node (V8, proxy), not in WKWebView. In-app timing is logged with `console.debug("[snapshot] ...")` for the manual pass. Pending: real-app measurement.
+- [x] Set capture interval, per-snapshot cap and total cap from the data; record in `docs/milestones/m3-results.md`.
+  - Values kept (3 s debounce, 15 s max wait, 2 MiB/snapshot, 16 MiB payload, 64 MiB total) with data from the proxy; re-check against the in-app log.
 - [ ] Verify input latency during capture with heavy output.
+  - Pending: needs a human with the real app (worst proxy stall 55 ms for a pathological 250-column per-cell-colour buffer; typical 4-7 ms).
 
 ## Task 5: Acceptance and handoff
 

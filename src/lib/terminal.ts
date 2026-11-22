@@ -269,8 +269,14 @@ export class TerminalSession {
     try {
       this.dirty = false;
       this.firstDirtyAt = 0;
+      const t0 = performance.now();
       const data = this.serializeAddon.serialize();
+      const t1 = performance.now();
       await snapshotSave(this.id, this.terminal.cols, this.terminal.rows, data);
+      // Content-free timing for the manual measurements (docs/milestones/m3-results.md).
+      console.debug(
+        `[snapshot] tab=${this.id} serialize=${(t1 - t0).toFixed(1)}ms chars=${data.length} save=${(performance.now() - t1).toFixed(1)}ms`
+      );
     } catch (err) {
       this.dirty = true; // keep it pending so a later trigger retries
       console.warn(`Failed to capture snapshot for tab ${this.id}:`, String(err));
