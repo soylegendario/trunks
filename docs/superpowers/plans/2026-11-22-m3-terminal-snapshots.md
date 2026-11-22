@@ -29,12 +29,12 @@
 
 ## Task 1: Backend snapshot store
 
-- [ ] Add dependency review note for `@xterm/addon-serialize` (license, version) in `DEPENDENCY-LICENSE-REVIEW.md` and ADR.
-- [ ] Create `src-tauri/src/snapshots.rs` with types and stubs that compile; write failing tests first.
-- [ ] Tests: id validation (rejects `..`, `/`, empty, long); save/load roundtrip; atomic overwrite; size cap trims oldest lines; unknown header version returns `None`; delete idempotent; clear_all; reconcile removes orphans only; permissions `0700`/`0600` (unix cfg).
-- [ ] Implement store, with the opt-in flag read from the database; test that save is refused when off and writes nothing.
-- [ ] Register commands in `lib.rs`; add the settings flag to `db.rs` (migration-safe default off) with tests.
-- [ ] `cargo test` passes; commit `feat: terminal snapshot store`.
+- [x] Add dependency review note for `@xterm/addon-serialize` (license, version) in `DEPENDENCY-LICENSE-REVIEW.md` and ADR.
+- [x] Create `src-tauri/src/snapshots.rs` with types and stubs that compile; write failing tests first.
+- [x] Tests: id validation (rejects `..`, `/`, empty, long); save/load roundtrip; atomic overwrite; size cap trims oldest lines; unknown header version returns `None`; delete idempotent; clear_all; reconcile removes orphans only; permissions `0700`/`0600` (unix cfg).
+- [x] Implement store, with the opt-in flag read from the database; test that save is refused when off and writes nothing.
+- [x] Register commands in `lib.rs`; add the settings flag to `db.rs` (migration-safe default off) with tests.
+- [x] `cargo test` passes; commit `feat: terminal snapshot store`.
 
 ## Task 2: Frontend capture and restore
 
