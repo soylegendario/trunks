@@ -174,6 +174,4 @@ This project is developed asynchronously and collaboratively across human develo
 
 Trunks is licensed under the GNU General Public License v3.0 only (`GPL-3.0-only`). You may use, study, modify, and distribute the software under its terms. If you distribute a modified version, follow the GPL's applicable source-code and other distribution requirements. Commercial use and distribution are allowed under the GPL. Private modifications that are not distributed generally do not require publishing their source code. See the full [GNU GPL v3 license](LICENSE).
 
-Earlier repository metadata declared MIT. If earlier versions were distributed under MIT, this change does not revoke rights already granted for those versions; the GPL-3.0-only declaration applies to this and future versions.
-
 The GPL governs the software code; it does not by itself grant rights to the Trunks name, logo, or other branding. See [BRANDING.md](BRANDING.md) for guidance.
