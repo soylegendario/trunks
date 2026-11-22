@@ -69,10 +69,11 @@
 - [x] Add parser tests for empty history, Unicode subject/author, multiple records, malformed/truncated records, and non-UTF-8 bytes in subject/author (decode with `String::from_utf8_lossy`, never fail the whole page); assert hashes and metadata remain associated with the right commit.
 - [x] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_commit_history`; confirm the new parser tests fail before implementation.
   - Note: 3 of 4 failed on assertions; `rejects_malformed_records` passed vacuously against the erroring stub. The parser is now implemented (`parse_commit_history`, format `%H%x00%h%x00%an%x00%ct%x00%s%x1e`) and all 4 pass. Still pending in the final implement step: `git log` query helper, OID resolution, base detection, `head_oid`. The command and cancel stubs are registered in `lib.rs` but still return an error / no-op.
-- [ ] Add temporary-repository integration tests for linear branch-only/shared history, a merged side branch, selected branch equal to base, and no detected base.
-- [ ] Add integration tests for detached `HEAD`, unborn branch, shallow clone, and stale/missing base.
-- [ ] Add the `head_oid` field to `GitStatusResult` with a test.
-- [ ] Implement the types, safe Git query helpers (OID resolution, `--end-of-options`), parser, and base detection; run `cargo test --manifest-path src-tauri/Cargo.toml commit_history` for this subset.
+- [x] Add temporary-repository integration tests for linear branch-only/shared history, a merged side branch, selected branch equal to base, and no detected base.
+- [x] Add integration tests for detached `HEAD`, unborn branch, shallow clone, and stale/missing base.
+- [x] Add the `head_oid` field to `GitStatusResult` with a test.
+- [x] Implement the types, safe Git query helpers (OID resolution, `--end-of-options`), parser, and base detection; run `cargo test --manifest-path src-tauri/Cargo.toml commit_history` for this subset.
+  - Note: Task 1a done; 56 backend tests pass (9 new integration tests). `git_get_commit_history` already pages with an offset cursor (`COMMIT_HISTORY_PAGE_SIZE = 200`, provisional) but cursor validation/`reset`, explicit `base_ref` tests, pagination tests and cancellation (`request_id` is still ignored) belong to Task 1b. Detached/shallow histories are flat; an explicit `base_ref` is validated even then.
 
 ### Task 1b: Pagination, Reset, Explicit Base and Cancellation
 

@@ -163,6 +163,8 @@ pub struct GitStatusEntry {
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct GitStatusResult {
     pub entries: Vec<GitStatusEntry>,
+    /// Full OID of `HEAD`; `None` on an unborn branch.
+    pub head_oid: Option<String>,
 }
 
 /// Parses the output of `git status --porcelain=v2 -z`.
@@ -246,7 +248,7 @@ pub fn parse_status_porcelain_v2_z(input: &[u8]) -> Result<GitStatusResult, Stri
             _ => return Err(format!("unrecognised status record '{line}'")),
         }
     }
-    Ok(GitStatusResult { entries })
+    Ok(GitStatusResult { entries, head_oid: None })
 }
 
 #[derive(Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -350,14 +352,233 @@ pub fn parse_commit_history(
     Ok(commits)
 }
 
+/// Commits per page. Provisional: it is set after measuring representative repositories
+/// (see Task 1b and the Deferred Decisions in the M2 plan).
+const COMMIT_HISTORY_PAGE_SIZE: usize = 200;
+
+const COMMIT_LOG_FORMAT: &str = "--format=%H%x00%h%x00%an%x00%ct%x00%s%x1e";
+
+/// Resolves `refname` to a full commit OID, or `None` when it does not exist.
+async fn resolve_oid(cwd: &Path, refname: &str) -> Option<String> {
+    let spec = format!("{refname}^{{commit}}");
+    let out = run_git(
+        cwd,
+        &["rev-parse", "--verify", "--quiet", "--end-of-options", &spec],
+        "git rev-parse --verify",
+    )
+    .await
+    .ok()?;
+    let oid = String::from_utf8(out).ok()?.trim().to_string();
+    (oid.len() >= 40 && oid.chars().all(|c| c.is_ascii_hexdigit())).then_some(oid)
+}
+
+/// Resolves a remote's symbolic `HEAD` (for example `origin/HEAD`) to `(label, oid)`.
+async fn remote_default_base(cwd: &Path, remote: &str) -> Option<(String, String)> {
+    let head_ref = format!("refs/remotes/{remote}/HEAD");
+    let out = run_git(cwd, &["symbolic-ref", "--quiet", &head_ref], "git symbolic-ref")
+        .await
+        .ok()?;
+    let target = String::from_utf8(out).ok()?.trim().to_string();
+    let label = target.strip_prefix("refs/remotes/")?.to_string();
+    let oid = resolve_oid(cwd, &target).await?;
+    Some((label, oid))
+}
+
+/// Automatic base detection, in the order documented in the M2 design.
+async fn detect_base(cwd: &Path, branch: &str) -> Option<(String, String)> {
+    // 1. The remote of the branch's configured upstream, via its symbolic HEAD.
+    let key = format!("branch.{branch}.remote");
+    if let Ok(out) = run_git(cwd, &["config", "--get", &key], "git config --get").await {
+        let remote = String::from_utf8_lossy(&out).trim().to_string();
+        if !remote.is_empty() && remote != "." {
+            if let Some(found) = remote_default_base(cwd, &remote).await {
+                return Some(found);
+            }
+        }
+    }
+    // 2. Exactly one configured remote with a resolvable symbolic HEAD.
+    let remotes = run_git(cwd, &["remote"], "git remote").await.unwrap_or_default();
+    let mut candidates = Vec::new();
+    for remote in String::from_utf8_lossy(&remotes).lines().filter(|l| !l.is_empty()) {
+        if let Some(found) = remote_default_base(cwd, remote).await {
+            candidates.push(found);
+        }
+    }
+    if candidates.len() == 1 {
+        return candidates.pop();
+    }
+    if candidates.len() > 1 {
+        return None; // ambiguous remote defaults: do not guess
+    }
+    // 3. A local `main` or `master`, only when exactly one of them exists.
+    let main = resolve_oid(cwd, "refs/heads/main").await;
+    let master = resolve_oid(cwd, "refs/heads/master").await;
+    match (main, master) {
+        (Some(oid), None) => Some(("main".to_string(), oid)),
+        (None, Some(oid)) => Some(("master".to_string(), oid)),
+        _ => None,
+    }
+}
+
+async fn query_commits(
+    cwd: &Path,
+    revs: &[String],
+    group: GitCommitGroup,
+    skip: usize,
+    limit: usize,
+) -> Result<Vec<GitCommitInfo>, String> {
+    let skip = skip.to_string();
+    let limit = limit.to_string();
+    let mut args: Vec<&str> = vec![
+        "log", "--topo-order", COMMIT_LOG_FORMAT, "--skip", &skip, "-n", &limit,
+        "--end-of-options",
+    ];
+    args.extend(revs.iter().map(String::as_str));
+    let out = run_git(cwd, &args, "git log").await?;
+    parse_commit_history(&out, group)
+}
+
+async fn commit_history(
+    worktree_path: &str,
+    base_ref: Option<&str>,
+    cursor: Option<&GitCommitCursor>,
+) -> Result<GitCommitHistoryPage, String> {
+    let cwd = Path::new(worktree_path);
+    let branch = run_git(cwd, &["symbolic-ref", "--quiet", "HEAD"], "git symbolic-ref HEAD")
+        .await
+        .ok()
+        .and_then(|o| String::from_utf8(o).ok())
+        .and_then(|r| r.trim().strip_prefix("refs/heads/").map(str::to_string));
+    let head_oid = resolve_oid(cwd, "HEAD").await;
+
+    let explicit = base_ref.is_some();
+    let base_source = if explicit { GitBaseSource::Explicit } else { GitBaseSource::Auto };
+    let mut page = GitCommitHistoryPage {
+        branch: branch.clone(),
+        head_state: GitHeadState::Branch,
+        head_oid: head_oid.clone(),
+        base: None,
+        base_source,
+        partial_history: false,
+        reset: false,
+        commits: Vec::new(),
+        next_cursor: None,
+    };
+
+    // An explicit base is validated even when the history ends up flat, so a bad value
+    // is always reported instead of being silently ignored.
+    let mut base: Option<(String, String)> = None;
+    if let Some(name) = base_ref {
+        let list = git_list_branches(worktree_path.to_string()).await?;
+        let info = list
+            .iter()
+            .find(|b| b.name == name && !b.is_remote)
+            .or_else(|| list.iter().find(|b| b.name == name && b.is_remote))
+            .ok_or_else(|| format!("base '{name}' is not an existing local or remote branch"))?;
+        let full = if info.is_remote {
+            format!("refs/remotes/{}", info.name)
+        } else {
+            format!("refs/heads/{}", info.name)
+        };
+        let oid = resolve_oid(cwd, &full)
+            .await
+            .ok_or_else(|| format!("base '{name}' does not resolve to a commit"))?;
+        base = Some((info.name.clone(), oid));
+    }
+
+    let Some(head_oid) = head_oid else {
+        // Unborn branch: nothing to list. (A detached HEAD always resolves.)
+        page.head_state = GitHeadState::Unborn;
+        page.base = base.map(|(label, _)| label);
+        return Ok(page);
+    };
+    if branch.is_none() {
+        page.head_state = GitHeadState::Detached;
+    }
+    let shallow = run_git(
+        cwd,
+        &["rev-parse", "--is-shallow-repository"],
+        "git rev-parse --is-shallow-repository",
+    )
+    .await
+    .map(|o| String::from_utf8_lossy(&o).trim() == "true")
+    .unwrap_or(false);
+    page.partial_history = shallow;
+
+    // Detached HEAD and shallow clones are listed flat; an explicit base is still reported.
+    let flat = branch.is_none() || shallow;
+    if !flat && !explicit {
+        base = detect_base(cwd, branch.as_deref().unwrap_or_default()).await;
+    }
+    page.base = base.as_ref().map(|(label, _)| label.clone());
+    let base_oid = if flat { None } else { base.map(|(_, oid)| oid) };
+
+    // Revision sets per group.
+    let mut groups: Vec<(GitCommitGroup, Vec<String>)> = Vec::new();
+    match &base_oid {
+        None => groups.push((GitCommitGroup::Flat, vec![head_oid.clone()])),
+        Some(base_oid) => {
+            groups.push((
+                GitCommitGroup::BranchOnly,
+                vec![head_oid.clone(), format!("^{base_oid}")],
+            ));
+            let out = run_git(
+                cwd,
+                &["merge-base", "--all", &head_oid, base_oid],
+                "git merge-base --all",
+            )
+            .await;
+            // Exit status 1 means the histories are unrelated: the shared group is empty.
+            let bases: Vec<String> = out
+                .map(|o| String::from_utf8_lossy(&o).lines().map(str::to_string).collect())
+                .unwrap_or_default();
+            if !bases.is_empty() {
+                groups.push((GitCommitGroup::Shared, bases));
+            }
+        }
+    }
+
+    let (start_group, start_offset) = match cursor {
+        Some(c) => (Some(c.group), c.offset as usize),
+        None => (None, 0),
+    };
+    let mut started = start_group.is_none();
+    let mut budget = COMMIT_HISTORY_PAGE_SIZE;
+    for (group, revs) in &groups {
+        let mut offset = 0;
+        if !started {
+            if Some(*group) != start_group {
+                continue;
+            }
+            started = true;
+            offset = start_offset;
+        }
+        let mut got = query_commits(cwd, revs, *group, offset, budget + 1).await?;
+        if got.len() > budget {
+            got.truncate(budget);
+            page.commits.extend(got);
+            page.next_cursor = Some(GitCommitCursor {
+                group: *group,
+                offset: (offset + budget) as u32,
+                head_oid: head_oid.clone(),
+                base_oid: base_oid.clone(),
+            });
+            break;
+        }
+        budget -= got.len();
+        page.commits.extend(got);
+    }
+    Ok(page)
+}
+
 #[tauri::command]
 pub async fn git_get_commit_history(
-    _worktree_path: String,
-    _base_ref: Option<String>,
-    _cursor: Option<GitCommitCursor>,
+    worktree_path: String,
+    base_ref: Option<String>,
+    cursor: Option<GitCommitCursor>,
     _request_id: String,
 ) -> Result<GitCommitHistoryPage, String> {
-    Err("git_get_commit_history is not implemented".to_string())
+    commit_history(&worktree_path, base_ref.as_deref(), cursor.as_ref()).await
 }
 
 #[tauri::command]
@@ -552,7 +773,9 @@ pub async fn git_get_status(worktree_path: String) -> Result<GitStatusResult, St
     )
     .await
     .map_err(explain_status_error)?;
-    parse_status_porcelain_v2_z(&out)
+    let mut result = parse_status_porcelain_v2_z(&out)?;
+    result.head_oid = resolve_oid(Path::new(&worktree_path), "HEAD").await;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1552,5 +1775,161 @@ locked
 
         assert_eq!(git_get_diff(s(&repo), Some("new.txt".into()), true).await.unwrap(), "");
         assert_eq!(git_get_diff(s(&repo), Some("ignored.txt".into()), false).await.unwrap(), "");
+    }
+
+    // ---- Commit history integration ----
+
+    fn commit(repo: &Path, msg: &str) {
+        git_sync(repo, &["commit", "--allow-empty", "-m", msg]);
+    }
+
+    async fn history(repo: &Path, base: Option<&str>) -> GitCommitHistoryPage {
+        commit_history(repo.to_str().unwrap(), base, None)
+            .await
+            .expect("history")
+    }
+
+    fn subjects(page: &GitCommitHistoryPage, group: GitCommitGroup) -> Vec<&str> {
+        page.commits
+            .iter()
+            .filter(|c| c.group == group)
+            .map(|c| c.subject.as_str())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn commit_history_linear_branch_only_and_shared() {
+        let tmp = TempDir::new("hist-linear");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "feat"]);
+        commit(&repo, "one");
+        commit(&repo, "two");
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.branch.as_deref(), Some("feat"));
+        assert_eq!(page.head_state, GitHeadState::Branch);
+        assert_eq!(page.base.as_deref(), Some("main"));
+        assert_eq!(page.base_source, GitBaseSource::Auto);
+        assert!(!page.partial_history && page.next_cursor.is_none());
+        assert_eq!(subjects(&page, GitCommitGroup::BranchOnly), ["two", "one"]);
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["initial"]);
+        // Branch-only commits come before shared ones.
+        assert_eq!(page.commits[0].group, GitCommitGroup::BranchOnly);
+        assert_eq!(page.commits[2].group, GitCommitGroup::Shared);
+    }
+
+    #[tokio::test]
+    async fn commit_history_merged_side_branch_classified_by_reachability() {
+        let tmp = TempDir::new("hist-merge");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "side"]);
+        commit(&repo, "side work");
+        git_sync(&repo, &["checkout", "-b", "feat", "main"]);
+        commit(&repo, "feat work");
+        git_sync(&repo, &["merge", "--no-ff", "-m", "merge side", "side"]);
+
+        let page = history(&repo, None).await;
+        let only = subjects(&page, GitCommitGroup::BranchOnly);
+        assert_eq!(only.len(), 3, "{only:?}");
+        assert!(only.contains(&"side work") && only.contains(&"merge side"));
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_branch_equal_to_base_has_empty_branch_only() {
+        let tmp = TempDir::new("hist-equal");
+        let repo = init_repo(&tmp, "repo");
+        commit(&repo, "second");
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.base.as_deref(), Some("main"));
+        assert!(subjects(&page, GitCommitGroup::BranchOnly).is_empty());
+        assert_eq!(subjects(&page, GitCommitGroup::Shared), ["second", "initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_without_detectable_base_is_flat() {
+        let tmp = TempDir::new("hist-nobase");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["branch", "-m", "main", "trunk"]);
+        commit(&repo, "second");
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.base, None);
+        assert_eq!(page.base_source, GitBaseSource::Auto);
+        assert_eq!(subjects(&page, GitCommitGroup::Flat), ["second", "initial"]);
+        assert!(page.commits.iter().all(|c| c.group == GitCommitGroup::Flat));
+    }
+
+    #[tokio::test]
+    async fn commit_history_stale_remote_head_does_not_become_base() {
+        let tmp = TempDir::new("hist-stale");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["branch", "-m", "main", "trunk"]);
+        git_sync(&repo, &["remote", "add", "origin", "https://example.invalid/x.git"]);
+        git_sync(&repo, &["config", "branch.trunk.remote", "origin"]);
+        git_sync(&repo, &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone"]);
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.base, None);
+        assert_eq!(subjects(&page, GitCommitGroup::Flat), ["initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_detached_head_is_flat() {
+        let tmp = TempDir::new("hist-detached");
+        let repo = init_repo(&tmp, "repo");
+        commit(&repo, "second");
+        git_sync(&repo, &["checkout", "--detach"]);
+
+        let page = history(&repo, None).await;
+        assert_eq!(page.head_state, GitHeadState::Detached);
+        assert_eq!(page.branch, None);
+        assert_eq!(page.base, None);
+        assert_eq!(subjects(&page, GitCommitGroup::Flat), ["second", "initial"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_unborn_branch_is_empty() {
+        let tmp = TempDir::new("hist-unborn");
+        let repo = tmp.0.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        git_sync(&repo, &["init", "-b", "main"]);
+
+        let page = history(&repo.canonicalize().unwrap(), None).await;
+        assert_eq!(page.head_state, GitHeadState::Unborn);
+        assert_eq!(page.head_oid, None);
+        assert!(page.commits.is_empty() && page.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn commit_history_shallow_clone_is_flat_and_partial() {
+        let tmp = TempDir::new("hist-shallow");
+        let src = init_repo(&tmp, "src");
+        commit(&src, "second");
+        commit(&src, "third");
+        let url = format!("file://{}", src.display());
+        git_sync(&tmp.0, &["clone", "--depth", "1", &url, "clone"]);
+
+        let page = history(&tmp.0.join("clone").canonicalize().unwrap(), None).await;
+        assert!(page.partial_history);
+        assert_eq!(page.base, None, "no separator in a shallow repository");
+        assert_eq!(subjects(&page, GitCommitGroup::Flat), ["third"]);
+    }
+
+    #[tokio::test]
+    async fn commit_history_status_reports_head_oid() {
+        let tmp = TempDir::new("hist-status");
+        let repo = init_repo(&tmp, "repo");
+        let status = git_get_status(repo.to_string_lossy().into_owned()).await.unwrap();
+        let page = history(&repo, None).await;
+        assert_eq!(status.head_oid.as_deref().map(str::len), Some(40));
+        assert_eq!(status.head_oid, page.head_oid);
+
+        let empty = tmp.0.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        git_sync(&empty, &["init", "-b", "main"]);
+        let status = git_get_status(empty.to_string_lossy().into_owned()).await.unwrap();
+        assert_eq!(status.head_oid, None);
     }
 }
