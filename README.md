@@ -1,5 +1,3 @@
-README.md
-READ-ONLY
 ![Trunks — Your workspace. Your flow.](docs/assets/trunks_concept.png)
  
 # Trunks — Terminal Workspace
