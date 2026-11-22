@@ -17,7 +17,13 @@
 
   const POLL_MS = 2500;
 
-  let tab = $state<"files" | "git" | "commits">("git");
+  type InspectorTab = "files" | "git" | "commits";
+  // Selected inspector tab per worktree, kept in memory for the session only.
+  let tabByWorktree = $state<Record<string, InspectorTab>>({});
+  let tab = $derived<InspectorTab>(worktreePath ? (tabByWorktree[worktreePath] ?? "git") : "git");
+  function setTab(t: InspectorTab) {
+    if (worktreePath) tabByWorktree[worktreePath] = t;
+  }
   let status = $state<GitStatusResult | null>(null);
   let error = $state<string | null>(null);
   let refreshKey = $state(0);
@@ -65,11 +71,11 @@
 
 <div class="inspector">
   <div class="tabs">
-    <button class:active={tab === "git"} onclick={() => (tab = "git")}>
+    <button class:active={tab === "git"} onclick={() => setTab("git")}>
       Git{changeCount ? ` (${changeCount})` : ""}
     </button>
-    <button class:active={tab === "commits"} onclick={() => (tab = "commits")}>Commits</button>
-    <button class:active={tab === "files"} onclick={() => (tab = "files")}>Files</button>
+    <button class:active={tab === "commits"} onclick={() => setTab("commits")}>Commits</button>
+    <button class:active={tab === "files"} onclick={() => setTab("files")}>Files</button>
   </div>
   <div class="body">
     {#if !worktreePath}
