@@ -61,7 +61,8 @@
 
 ## Task 5: Acceptance and handoff
 
-- [ ] Full checks: `npm run check && npm run build`, `npm run test:unit`, `cargo test --manifest-path src-tauri/Cargo.toml`.
+- [x] Full checks: `npm run check && npm run build`, `npm run test:unit`, `cargo test --manifest-path src-tauri/Cargo.toml`.
 - [ ] Manual checklist on macOS: setting off writes nothing; on restores after restart with separator; TUI snapshot then new shell works; deletion paths; permissions.
-- [ ] Write `docs/milestones/m3-results.md`; update `AGENTS.md`, this plan and ADR.
-- [ ] `git status` shows only intended files.
+  - Pending: needs a human with the real app. Guide: `docs/milestones/m3-manual-pass.md`.
+- [x] Write `docs/milestones/m3-results.md`; update `AGENTS.md`, this plan and ADR.
+- [x] `git status` shows only intended files.
