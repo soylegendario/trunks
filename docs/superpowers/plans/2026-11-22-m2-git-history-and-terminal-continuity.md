@@ -177,8 +177,9 @@
 - Modify: `AGENTS.md` (M2 progress and next objective)
 - Modify: this plan (mark completed steps and record measured values/decisions)
 
-- [ ] Run the full local verification set: `npm run check`, `npm run build`, `npm run test:unit`, and `cargo test --manifest-path src-tauri/Cargo.toml`.
-- [ ] Complete the manual commit-history acceptance checklist on macOS; record repository shape, base selection, and observed UI behavior.
-- [ ] Record snapshot spike outcome separately from shipped features; do not claim snapshot persistence if only the spike was completed.
-- [ ] Update `AGENTS.md`, this plan, and M2 result documentation with evidence and the next objective.
-- [ ] Confirm `git status --short` contains only intended M2 changes and no temporary prototype artifacts.
+- [x] Run the full local verification set: `npm run check`, `npm run build`, `npm run test:unit`, and `cargo test --manifest-path src-tauri/Cargo.toml`.
+- [x] Complete the manual commit-history acceptance checklist on macOS; record repository shape, base selection, and observed UI behavior.
+- [x] Record snapshot spike outcome separately from shipped features; do not claim snapshot persistence if only the spike was completed.
+- [x] Update `AGENTS.md`, this plan, and M2 result documentation with evidence and the next objective.
+- [x] Confirm `git status --short` contains only intended M2 changes and no temporary prototype artifacts.
+  - Note: manual pass reported OK by the user without per-step logs; results in `docs/milestones/m2-results.md`.
