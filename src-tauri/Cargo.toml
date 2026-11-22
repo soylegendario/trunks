@@ -3,6 +3,7 @@ name = "trunks"
 version = "0.1.0"
 description = "Trunks Terminal Workspace"
 authors = ["Trunks Contributors"]
+license = "GPL-3.0-only"
 edition = "2021"
 
 [lib]
