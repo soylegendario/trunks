@@ -101,3 +101,15 @@ export function tabsForWorktree<T extends { cwd: string }>(tabs: T[], worktreePa
   const target = normalizePath(worktreePath);
   return tabs.filter((t) => normalizePath(t.cwd) === target);
 }
+
+/** Ids of the tabs bound to any of the given worktree paths (e.g. a removed worktree or project). */
+export function tabIdsForRemovedPaths<T extends { id: string; cwd: string }>(
+  tabs: T[],
+  removedPaths: string[]
+): string[] {
+  const ids = new Set<string>();
+  for (const path of removedPaths) {
+    for (const t of tabsForWorktree(tabs, path)) ids.add(t.id);
+  }
+  return [...ids];
+}

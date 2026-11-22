@@ -4,6 +4,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  tabIdsForRemovedPaths,
   hydrateProjects,
   toPersistedProjects,
   resolveSelectedWorktree,
@@ -167,5 +168,20 @@ describe("tabsForWorktree", () => {
   });
   it("returns an empty list when nothing is bound", () => {
     assert.deepEqual(tabsForWorktree(tabs, "/r/none"), []);
+  });
+});
+
+describe("tabIdsForRemovedPaths", () => {
+  const tabs = [
+    { id: "a", cwd: "/repo/wt1" },
+    { id: "b", cwd: "/repo/wt2/" },
+    { id: "c", cwd: "/other" },
+  ];
+  it("selects tabs bound to the removed worktrees, ignoring trailing slashes", () => {
+    assert.deepEqual(tabIdsForRemovedPaths(tabs, ["/repo/wt2"]), ["b"]);
+    assert.deepEqual(tabIdsForRemovedPaths(tabs, ["/repo/wt1", "/repo/wt2"]).sort(), ["a", "b"]);
+  });
+  it("returns nothing when no tab matches", () => {
+    assert.deepEqual(tabIdsForRemovedPaths(tabs, ["/nope"]), []);
   });
 });

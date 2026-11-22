@@ -13,7 +13,7 @@ When starting a new session, **every agent MUST perform the following steps in o
 1. **Read this file (`AGENTS.md`)** to review operating rules and constraints.
 2. **Consult the current project status**:
    - Review the "Current Project Status and Roadmap" section in this file ([`AGENTS.md`](AGENTS.md)).
-   - Review the active plan in [`docs/superpowers/plans/`](docs/superpowers/plans/) (currently [`docs/superpowers/plans/2026-11-22-m2-git-history-and-terminal-continuity.md`](docs/superpowers/plans/2026-11-22-m2-git-history-and-terminal-continuity.md)).
+   - Review the active plan in [`docs/superpowers/plans/`](docs/superpowers/plans/) (currently [`docs/superpowers/plans/2026-11-22-m3-terminal-snapshots.md`](docs/superpowers/plans/2026-11-22-m3-terminal-snapshots.md); M2 plan is complete).
 3. **Identify the immediate task**:
    - Locate the first pending item (`- [ ]`) in the active plan.
    - Contrast requirements with [`docs/spec.md`](docs/spec.md), [`docs/superpowers/specs/2026-11-22-m2-git-history-and-terminal-continuity-design.md`](docs/superpowers/specs/2026-11-22-m2-git-history-and-terminal-continuity-design.md), and the corresponding ADR in [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md).
@@ -62,7 +62,7 @@ Every agent must respect the principles defined in [`docs/intent.md`](docs/inten
 ## 4. Current Project Status and Roadmap
 
 ### Current Status
-- **Milestone:** Milestone 1 (M1 — Worktree-First Project Workflow & Git Integration) **completed** and merged into `main`; Milestone 2 (M2 — Git history and terminal continuity) **completed** on branch `feat/m2-git-history` (pending merge). Only the snapshot spike was done; no snapshot persistence ships.
+- **Milestone:** Milestones 0, 1 and 2 are **completed** and merged into `main`. Milestone 3 (M3 — opt-in terminal snapshots) is **implemented** on branch `feat/m3-terminal-snapshots` (all tasks done); manual macOS acceptance **passed** (reported by user).
 - **Progress:**
   - [x] **Milestone 0 Completed:** Scaffold Tauri 2 + Svelte 5, native PTY and terminal fidelity (`portable-pty` + xterm.js), transactional SQLite persistence (WAL mode) with path reconciliation and cold restart recovery without ghost shells (`docs/milestones/m0-results.md`, `docs/adr/0001-stack.md`).
   - [x] **M1 - Task 1 Completed:** Native Git service in Rust (`src-tauri/src/git.rs`; 8 Tauri commands registered in this task, 9 with `git_read_file` added in Task 4; 43 tests including integration against real `git`).
@@ -71,8 +71,9 @@ Every agent must respect the principles defined in [`docs/intent.md`](docs/inten
   - [x] **M1 - Task 3 Completed:** Terminal tabs bound to Git-reported worktree paths (`findTabForWorktree` in `project-logic.ts`; opening terminal focuses existing tab; button disabled on prunable worktrees; `pty_create` validates cwd existence).
   - [x] **M1 - Task 4 Completed:** Read-only right inspector panel (`InspectorPanel`, `GitStatusView`, `DiffViewer`, `FileTree`) with polling; Git status grouped by collapsible folders; files and diffs opened as central read-only tabs (`FileViewer`, `git_read_file`); resizable panels with shortcuts `Cmd+B` / `Cmd+L`.
   - [x] **M1 - Task 5 Completed:** Acceptance criteria `AC-M1-01` through `AC-M1-08` validated manually by user; `npm run check`, `build`, `test:unit` (16), and `cargo test` (43) all pass. Results documented in `docs/milestones/m1-results.md`.
+  - [x] **M3 Implemented:** backend store (`src-tauri/src/snapshots.rs`, opt-in enforced under the store lock, `app_settings` flag), frontend capture/restore (`snapshot-logic.ts` controller, `snapshots.ts`, `TerminalSession`), settings dialog with privacy notice. `cargo test` 102, `npm run test:unit` 68, `check` and `build` pass. Manual macOS pass reported OK by user (no timings recorded; Task 4 numbers remain a V8 proxy). Whole-branch review done; details in `docs/milestones/m3-results.md`.
   - [x] **M2 Completed:** Commit history tab (grouping, base selection, pagination, cancellation), first-parent commit diff tabs, per-worktree inspector tab, and macOS snapshot spike (`docs/milestones/m2-snapshot-spike-results.md`). `npm run check`, `build`, `test:unit` (26), and `cargo test` (73) pass; manual pass reported OK by user. Results in `docs/milestones/m2-results.md`.
-- **Next Objective:** Merge `feat/m2-git-history`, then decide whether to pursue terminal snapshot persistence (spike recommends xterm serialization with privacy controls first) and define the next milestone. Windows/Linux validation remains deferred until external testers are available.
+- **Next Objective:** Open the M3 merge request into `main` and merge. Known follow-ups: Cmd+Q flush handshake only if data loss is ever observed, cheaper eviction. Windows/Linux validation remains deferred until external testers are available.
 
 ---
 

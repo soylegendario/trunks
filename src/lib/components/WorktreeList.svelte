@@ -8,12 +8,15 @@
   import CreateWorktreeModal from "./CreateWorktreeModal.svelte";
   import RemoveWorktreeModal from "./RemoveWorktreeModal.svelte";
   import RemoveProjectModal from "./RemoveProjectModal.svelte";
+  import SettingsModal from "./SettingsModal.svelte";
 
   let {
     onOpenTerminal,
     onSelectWorktree,
     runningTerminals = () => 0,
     restoredTerminals = () => 0,
+    onWorktreeRemoved,
+    onProjectRemoved,
   }: {
     onOpenTerminal: (
       cwd: string,
@@ -26,12 +29,17 @@
     runningTerminals?: (worktreePath: string) => number;
     /** Number of restored (not yet started) terminals bound to a worktree path. */
     restoredTerminals?: (worktreePath: string) => number;
+    /** A worktree was removed: its terminal snapshots must be deleted. */
+    onWorktreeRemoved?: (worktreePath: string) => void;
+    /** A project was removed: snapshots of terminals bound to any of these paths must be deleted. */
+    onProjectRemoved?: (removedPaths: string[]) => void;
   } = $props();
 
   let addProjectOpen = $state(false);
   let createWorktreeOpen = $state(false);
   let removeWorktreeOpen = $state(false);
   let removeProjectOpen = $state(false);
+  let settingsOpen = $state(false);
 
   let targetProject = $state<ProjectState | null>(null);
   let targetWorktree = $state<GitWorktreeInfo | null>(null);
@@ -116,6 +124,14 @@
         title="Refresh all projects & worktrees"
       >
         ↻
+      </button>
+      <button
+        class="icon-btn"
+        onclick={() => (settingsOpen = true)}
+        title="Settings"
+        aria-label="Settings"
+      >
+        ⚙
       </button>
       <button
         class="action-btn-sm primary"
@@ -309,11 +325,15 @@
   bind:isOpen={removeWorktreeOpen}
   project={targetProject}
   worktree={targetWorktree}
+  onRemoved={(path) => onWorktreeRemoved?.(path)}
 />
+
+<SettingsModal bind:isOpen={settingsOpen} />
 
 <RemoveProjectModal
   bind:isOpen={removeProjectOpen}
   project={targetProject}
+  onRemoved={(paths) => onProjectRemoved?.(paths)}
 />
 
 <style>

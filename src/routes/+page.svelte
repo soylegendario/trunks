@@ -10,7 +10,14 @@
     type TerminalTabItem,
   } from "$lib/storage";
   import { projectStore } from "$lib/projects.svelte";
-  import { findTabForWorktree, tabsForWorktree } from "$lib/project-logic";
+  import { findTabForWorktree, tabIdsForRemovedPaths, tabsForWorktree } from "$lib/project-logic";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import {
+    getSnapshotsEnabled,
+    isSnapshotsEnabledLocal,
+    snapshotDeleteMany,
+    snapshotReconcile,
+  } from "$lib/snapshots";
   import TerminalView from "$lib/TerminalView.svelte";
   import WorktreeList from "$lib/components/WorktreeList.svelte";
   import InspectorPanel from "$lib/components/InspectorPanel.svelte";
@@ -275,6 +282,7 @@
       await session.destroy();
       sessions.delete(id);
     }
+    await snapshotDeleteMany([id]);
 
     const remaining = tabs.filter((t) => t.id !== id);
     tabs = remaining;
@@ -287,6 +295,19 @@
     await deleteTab(id).catch(console.error);
     await persistTabsState();
     await persistLayoutState();
+  }
+
+  /** Deletes the snapshots of every terminal bound to a removed worktree or project. */
+  async function purgeSnapshotsForPaths(paths: string[]) {
+    await snapshotDeleteMany(tabIdsForRemovedPaths(tabs, paths));
+  }
+
+  /** Flushes pending snapshots, bounded so closing the window can never hang on it. */
+  async function flushSnapshots() {
+    if (!isSnapshotsEnabledLocal()) return;
+    const flush = Promise.all([...sessions.values()].map((s) => s.flushSnapshot()));
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    await Promise.race([flush, timeout]).catch(() => {});
   }
 
   async function startShellOnTab(id: string) {
@@ -344,11 +365,27 @@
   onMount(() => {
     window.addEventListener("focus", handleWindowFocus);
 
+    // Flush snapshots before the window closes. The handler resolving lets Tauri close the window.
+    let unlistenClose: (() => void) | null = null;
+    getCurrentWindow()
+      .onCloseRequested(async () => {
+        await flushSnapshots();
+      })
+      .then((un) => (unlistenClose = un))
+      .catch((err) => console.warn("Close handler unavailable:", String(err)));
+
     (async () => {
       try {
         systemInfo = await invoke<SystemInfo>("get_system_info");
       } catch (err) {
         console.error("Failed to get system info:", err);
+      }
+
+      // The opt-in flag must be known before any terminal mounts and tries to restore a snapshot.
+      try {
+        await getSnapshotsEnabled();
+      } catch (err) {
+        console.warn("Failed to read terminal history setting:", String(err));
       }
 
       // Initialize project store (SQLite + Git discovery)
@@ -357,6 +394,10 @@
       // Initialize database and load persisted workspace layout & tabs
       try {
         const state = await getWorkspaceState();
+        // Drop snapshots whose tab no longer exists (never fails startup).
+        snapshotReconcile(state.tabs.map((t) => t.id)).catch((err) =>
+          console.warn("Snapshot reconcile failed:", String(err))
+        );
         showLeft = state.layout.show_left;
         showRight = state.layout.show_right;
 
@@ -425,6 +466,7 @@
 
     return () => {
       window.removeEventListener("focus", handleWindowFocus);
+      unlistenClose?.();
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
@@ -503,6 +545,8 @@
               (t) => t.isRestored && t.status === "stopped"
             ).length}
           onSelectWorktree={() => persistLayoutState()}
+          onWorktreeRemoved={(path) => purgeSnapshotsForPaths([path])}
+          onProjectRemoved={(paths) => purgeSnapshotsForPaths(paths)}
         />
       </aside>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
