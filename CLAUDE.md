@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-> **IMPORTANTE PARA CLAUDE:** Este repositorio utiliza un protocolo de colaboración multi-agente centralizado.
-> **DEBES LEER Y SEGUIR RIGUROSAMENTE [`AGENTS.md`](AGENTS.md)** antes de realizar cualquier cambio o tomar decisiones sobre el proyecto.
+> **IMPORTANT FOR CLAUDE:** This repository uses a centralized multi-agent collaboration protocol.
+> **YOU MUST READ AND STRICTLY FOLLOW [`AGENTS.md`](AGENTS.md)** before making any changes or decisions regarding the project.
 
 ---
 
-Este archivo es **solo un puntero**. El estado del proyecto, el plan activo, la siguiente tarea, los comandos de desarrollo y las restricciones arquitectónicas viven únicamente en [`AGENTS.md`](AGENTS.md), que es la única fuente de verdad.
+This file is **only a pointer**. Project status, active plan, next task, development commands, and architectural constraints live exclusively in [`AGENTS.md`](AGENTS.md), which serves as the single source of truth.
 
-No añadir aquí estado, rutas de planes ni comandos: duplicarlos hace que se desincronicen entre sesiones y agentes.
+Do not add status, plan paths, or commands here: duplicating them causes desynchronization across sessions and agents.
