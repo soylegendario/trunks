@@ -130,14 +130,15 @@
 - No product IPC, database schema, persistence API, or committed xterm addon is produced by this task.
 - The result note records test environment, xterm version, serialization path evaluated, output fixtures, fidelity findings, byte sizes, restore timings, privacy implications, and recommendation.
 
-- [ ] Build a disposable prototype that serializes and restores terminal output and marks the restored buffer as historical.
-- [ ] Run all measurements inside the real Tauri macOS WKWebView (for example a throwaway Tauri window or the dev app on a disposable branch), not in Chrome or Node; record the macOS and WebView versions. Browser-only numbers are not valid evidence.
-- [ ] Compare against a lightweight alternative: persisting a bounded tail of raw PTY output bytes on the Rust side and replaying it into a fresh terminal. Record fidelity, size, restore time, resize behavior, and dependency cost for both approaches so the ship/revise/drop recommendation has an alternative on the table.
-- [ ] Exercise plain text, ANSI styles, Unicode, long scrollback, resize, and a full-screen TUI transcript; record what is lost and preserved.
-- [ ] Measure serialized size and restoration time across representative output sizes; do not set a product cap before reviewing these measurements.
-- [ ] Assess secret exposure, user disclosure, and clear/delete behavior needed before product persistence could ship.
-- [ ] Write `docs/milestones/m2-snapshot-spike-results.md` with the evidence, both approaches compared, how to reproduce the measurements, and a ship/revise/drop recommendation.
-- [ ] Remove disposable spike files from the product tree (keeping the harness as described in Files) and verify no dependency, database, or product source changes remain from the experiment.
+- [x] Build a disposable prototype that serializes and restores terminal output and marks the restored buffer as historical.
+- [x] Run all measurements inside the real Tauri macOS WKWebView (for example a throwaway Tauri window or the dev app on a disposable branch), not in Chrome or Node; record the macOS and WebView versions. Browser-only numbers are not valid evidence.
+- [x] Compare against a lightweight alternative: persisting a bounded tail of raw PTY output bytes on the Rust side and replaying it into a fresh terminal. Record fidelity, size, restore time, resize behavior, and dependency cost for both approaches so the ship/revise/drop recommendation has an alternative on the table.
+- [x] Exercise plain text, ANSI styles, Unicode, long scrollback, resize, and a full-screen TUI transcript; record what is lost and preserved.
+- [x] Measure serialized size and restoration time across representative output sizes; do not set a product cap before reviewing these measurements.
+- [x] Assess secret exposure, user disclosure, and clear/delete behavior needed before product persistence could ship.
+- [x] Write `docs/milestones/m2-snapshot-spike-results.md` with the evidence, both approaches compared, how to reproduce the measurements, and a ship/revise/drop recommendation.
+- [x] Remove disposable spike files from the product tree (keeping the harness as described in Files) and verify no dependency, database, or product source changes remain from the experiment.
+  - Note: results in `docs/milestones/m2-snapshot-spike-results.md`; harness kept on branch `spike/m2-snapshot` (`93cc0bd`). Gaps: wrapped-line resize, mouse-mode TUI, and Windows/Linux were not measured. Recommendation: revise (prefer serialize, privacy controls required).
 
 ### Task 4: M2 Acceptance and Project Handoff
 
