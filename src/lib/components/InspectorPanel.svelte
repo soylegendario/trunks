@@ -3,6 +3,7 @@
   import { gitGetStatus, type GitStatusResult } from "$lib/git";
   import FileTree from "./FileTree.svelte";
   import GitStatusView from "./GitStatusView.svelte";
+  import CommitHistoryView from "./CommitHistoryView.svelte";
 
   let {
     worktreePath,
@@ -14,7 +15,7 @@
 
   const POLL_MS = 2500;
 
-  let tab = $state<"files" | "git">("git");
+  let tab = $state<"files" | "git" | "commits">("git");
   let status = $state<GitStatusResult | null>(null);
   let error = $state<string | null>(null);
   let refreshKey = $state(0);
@@ -65,6 +66,7 @@
     <button class:active={tab === "git"} onclick={() => (tab = "git")}>
       Git{changeCount ? ` (${changeCount})` : ""}
     </button>
+    <button class:active={tab === "commits"} onclick={() => (tab = "commits")}>Commits</button>
     <button class:active={tab === "files"} onclick={() => (tab = "files")}>Files</button>
   </div>
   <div class="body">
@@ -72,6 +74,8 @@
       <div class="hint">Select a worktree to inspect it.</div>
     {:else if tab === "git"}
       <GitStatusView {worktreePath} {status} {error} {onOpenFile} />
+    {:else if tab === "commits"}
+      <CommitHistoryView {worktreePath} headOid={status ? status.head_oid : undefined} />
     {:else}
       <div class="tree">
         <FileTree {worktreePath} {refreshKey} {onOpenFile} />

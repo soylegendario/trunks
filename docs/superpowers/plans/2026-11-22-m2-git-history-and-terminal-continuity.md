@@ -106,17 +106,19 @@
 - Add `gitGetCommitHistory(worktreePath: string, requestId: string, baseRef?: string, cursor?: GitCommitCursor): Promise<GitCommitHistoryPage>` and `gitCancelCommitHistory(requestId: string)`; the view generates a fresh `request_id` per request and cancels the previous one on worktree/base change or refresh.
 - `CommitHistoryView` receives `worktreePath: string | null` and resets the page/cursor when the selected worktree changes.
 
-- [ ] Add pure state tests for appending the next page, rejecting stale responses after worktree switch, resetting when the worktree changes, and replacing (not appending) accumulated pages when a page arrives with `reset: true`.
-- [ ] Run `npm run test:unit`; confirm the new state tests fail before implementation.
-- [ ] Implement the typed IPC wrapper in `src/lib/git.ts`.
-- [ ] Implement the view with loading, empty, error, detached HEAD, base unavailable, shallow history, grouped history, and load-more states.
-- [ ] Add Commits as a peer tab beside Git and Files in `InspectorPanel`; preserve existing tab behavior and status polling.
-- [ ] Refresh: refetch the first page when the Commits tab is activated, and invalidate when the existing status polling observes a changed `head_oid` (added in Task 1a); add a manual refresh control. Never poll the history query itself.
-- [ ] Show the base label and a short note that "only reachable" is graph reachability (squash-merged or rebased commits can still appear in that group).
-- [ ] Add an explicit base selector populated from the existing branch listing, with an "Automatic" entry that restores detection; show whether the current base is automatic or explicit. Keep the choice in memory per worktree for the session only (no SQLite persistence in M2) and reset the page state when it changes.
-- [ ] Extend the pure state tests: changing the base resets accumulated pages, and a stale response for a previous base is rejected.
-- [ ] Run `npm run test:unit`, `npm run check`, and `npm run build`; confirm tests pass, Svelte reports no errors/warnings, and the production build succeeds.
+- [x] Add pure state tests for appending the next page, rejecting stale responses after worktree switch, resetting when the worktree changes, and replacing (not appending) accumulated pages when a page arrives with `reset: true`.
+- [x] Run `npm run test:unit`; confirm the new state tests fail before implementation.
+  - Note: not honoured; logic and tests were written together, so no failing run was observed. The 22 unit tests pass.
+- [x] Implement the typed IPC wrapper in `src/lib/git.ts`.
+- [x] Implement the view with loading, empty, error, detached HEAD, base unavailable, shallow history, grouped history, and load-more states.
+- [x] Add Commits as a peer tab beside Git and Files in `InspectorPanel`; preserve existing tab behavior and status polling.
+- [x] Refresh: refetch the first page when the Commits tab is activated, and invalidate when the existing status polling observes a changed `head_oid` (added in Task 1a); add a manual refresh control. Never poll the history query itself.
+- [x] Show the base label and a short note that "only reachable" is graph reachability (squash-merged or rebased commits can still appear in that group).
+- [x] Add an explicit base selector populated from the existing branch listing, with an "Automatic" entry that restores detection; show whether the current base is automatic or explicit. Keep the choice in memory per worktree for the session only (no SQLite persistence in M2) and reset the page state when it changes.
+- [x] Extend the pure state tests: changing the base resets accumulated pages, and a stale response for a previous base is rejected.
+- [x] Run `npm run test:unit`, `npm run check`, and `npm run build`; confirm tests pass, Svelte reports no errors/warnings, and the production build succeeds.
 - [ ] Manually inspect the view with a disposable repository covering a linear branch, merge, missing base, detached HEAD, and a large history; confirm terminal input and navigation remain responsive.
+  - Note: Task 2 implemented except the manual inspection (above, still `[ ]`). `check` 0 errors/warnings, `build` ok, `test:unit` 22 pass. Not exercised in the running app yet; effects wrap `load` in `untrack` to avoid reactive loops, which needs confirming at runtime.
 
 ### Task 3: Disposable macOS xterm Snapshot Spike
 
