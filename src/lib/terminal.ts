@@ -1,5 +1,6 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
@@ -42,6 +43,7 @@ export class TerminalSession {
   private unlistenExit: UnlistenFn | null = null;
   private isDisposed = false;
   private onStatusChange?: (status: "running" | "stopped") => void;
+  private fitTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     tab: TerminalTab,
@@ -55,7 +57,8 @@ export class TerminalSession {
       cursorBlink: true,
       cursorStyle: "bar",
       fontSize: 13,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily:
+        'Menlo, Monaco, "SF Mono", "Apple Symbols", "Apple Color Emoji", "Courier New", monospace',
       theme: {
         background: "#11111b",
         foreground: "#cdd6f4",
@@ -83,6 +86,9 @@ export class TerminalSession {
 
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
+    // Correct width for box-drawing/symbol/emoji glyphs used by TUIs (Claude Code statusline)
+    this.terminal.loadAddon(new Unicode11Addon());
+    this.terminal.unicode.activeVersion = "11";
 
     // Forward user keystrokes to Rust PTY
     this.terminal.onData((data) => {
@@ -161,10 +167,33 @@ export class TerminalSession {
   public fit() {
     if (this.isDisposed) return;
     try {
+      // Skip when the grid would not change: avoids redundant SIGWINCH/reflow.
+      const dims = this.fitAddon.proposeDimensions();
+      if (
+        !dims ||
+        Number.isNaN(dims.cols) ||
+        Number.isNaN(dims.rows) ||
+        (dims.cols === this.terminal.cols && dims.rows === this.terminal.rows)
+      ) {
+        return;
+      }
       this.fitAddon.fit();
     } catch (err) {
       // Element might be hidden (display: none)
     }
+  }
+
+  /**
+   * Debounced fit for continuous resize sources (panel toggle/drag, window resize).
+   * Only the settled size reaches the PTY, so TUIs repaint once at the final width.
+   */
+  public scheduleFit(delay = 100) {
+    if (this.isDisposed) return;
+    if (this.fitTimer) clearTimeout(this.fitTimer);
+    this.fitTimer = setTimeout(() => {
+      this.fitTimer = null;
+      this.fit();
+    }, delay);
   }
 
   public async restart() {
@@ -174,6 +203,10 @@ export class TerminalSession {
 
   public async destroy() {
     this.isDisposed = true;
+    if (this.fitTimer) {
+      clearTimeout(this.fitTimer);
+      this.fitTimer = null;
+    }
     if (this.unlistenOutput) {
       this.unlistenOutput();
       this.unlistenOutput = null;
