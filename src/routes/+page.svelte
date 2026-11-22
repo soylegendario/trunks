@@ -417,7 +417,7 @@
       resizeObserver = new ResizeObserver(() => {
         if (activeTabId) {
           const currentSession = sessions.get(activeTabId);
-          currentSession?.fit();
+          currentSession?.scheduleFit();
         }
       });
       resizeObserver.observe(centerElement);
