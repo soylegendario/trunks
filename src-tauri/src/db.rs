@@ -77,6 +77,8 @@ pub struct DatabaseManager {
     conn: Arc<Mutex<Connection>>,
 }
 
+const SETTING_SNAPSHOTS_ENABLED: &str = "snapshots_enabled";
+
 fn current_timestamp() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -156,6 +158,11 @@ impl DatabaseManager {
                 tab_order INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );
             ",
         )?;
@@ -479,6 +486,37 @@ impl DatabaseManager {
         Ok(())
     }
 
+    /// Opt-in flag for terminal snapshots. Absent row means disabled (privacy by default).
+    pub fn snapshots_enabled(&self) -> Result<bool, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("Database lock poisoned: {}", e))?;
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1;",
+                params![SETTING_SNAPSHOTS_ENABLED],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to read setting: {}", e))?;
+        Ok(value.as_deref() == Some("1"))
+    }
+
+    pub fn set_snapshots_enabled(&self, enabled: bool) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("Database lock poisoned: {}", e))?;
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+            params![SETTING_SNAPSHOTS_ENABLED, if enabled { "1" } else { "0" }],
+        )
+        .map_err(|e| format!("Failed to save setting: {}", e))?;
+        Ok(())
+    }
+
     pub fn delete_tab(&self, id: &str) -> Result<(), String> {
         let conn = self
             .conn
@@ -547,6 +585,19 @@ pub fn db_delete_tab(
     id: String,
 ) -> Result<(), String> {
     state.delete_tab(&id)
+}
+
+#[tauri::command]
+pub fn db_get_snapshots_enabled(state: State<'_, DatabaseManager>) -> Result<bool, String> {
+    state.snapshots_enabled()
+}
+
+#[tauri::command]
+pub fn db_set_snapshots_enabled(
+    state: State<'_, DatabaseManager>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.set_snapshots_enabled(enabled)
 }
 
 #[tauri::command]
@@ -700,5 +751,41 @@ mod tests {
         let state3 = db.get_workspace_state().expect("Failed to get state");
         assert_eq!(state3.tabs.len(), 1);
         assert_eq!(state3.tabs[0].id, "tab-2");
+    }
+
+    #[test]
+    fn test_snapshots_disabled_by_default() {
+        let db = DatabaseManager::new_in_memory().expect("Failed to create in-memory db");
+        assert_eq!(db.snapshots_enabled(), Ok(false));
+    }
+
+    #[test]
+    fn test_snapshots_flag_roundtrip() {
+        let db = DatabaseManager::new_in_memory().expect("Failed to create in-memory db");
+        db.set_snapshots_enabled(true).unwrap();
+        assert_eq!(db.snapshots_enabled(), Ok(true));
+        db.set_snapshots_enabled(false).unwrap();
+        assert_eq!(db.snapshots_enabled(), Ok(false));
+    }
+
+    #[test]
+    fn test_snapshots_flag_survives_reopen_and_old_databases_default_off() {
+        let dir = std::env::temp_dir().join(format!("trunks-db-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("workspace.db");
+        {
+            // Simulates a pre-M3 database: schema without the settings table.
+            std::fs::create_dir_all(&dir).unwrap();
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE terminal_tabs (id TEXT PRIMARY KEY, title TEXT NOT NULL, cwd TEXT NOT NULL, project_name TEXT, worktree_name TEXT, tab_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);").unwrap();
+        }
+        let db = DatabaseManager::new(&path).unwrap();
+        assert_eq!(db.snapshots_enabled(), Ok(false));
+        db.set_snapshots_enabled(true).unwrap();
+        drop(db);
+        let db = DatabaseManager::new(&path).unwrap();
+        assert_eq!(db.snapshots_enabled(), Ok(true));
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
