@@ -17,7 +17,7 @@
 - Git remains the source of truth; never persist commit inventory or history in SQLite.
 - Git commands run asynchronously, pass arguments separately, and do not invoke a shell.
 - Resolve every ref (`HEAD`, upstream, base) once per request to a full OID with `git rev-parse --verify --end-of-options <ref>`; every later Git command in that request uses only those OIDs, so a ref name can never be parsed as an option and both group queries see the same graph.
-- Every spawned Git process uses `kill_on_drop(true)` and is cancelled when the request is superseded (worktree switch or newer request); a discarded response must not leave a running `git` process behind.
+- Every spawned Git process uses `kill_on_drop(true)`. Tauri does not cancel an in-flight command by itself, so cancellation is explicit: the frontend sends a `request_id` with each history request, and `git_cancel_commit_history(request_id)` (or a newer request for the same worktree) triggers a per-worktree cancellation token / `AbortHandle` in the backend that drops the pending future and thereby kills the spawned `git` process. A discarded response must not leave a running `git` process behind.
 - Commit inspection is read-only; no checkout, commit, cherry-pick, revert, or staging actions.
 - “Only reachable” means graph reachability relative to the detected base, not author or origin.
 - Do not include commits from branches that are not reachable from the selected worktree's `HEAD`.
@@ -34,49 +34,60 @@
 - Detached HEAD, unborn branches, and shallow repositories must not be mislabeled as complete branch history — backend integration tests in Task 1 and visible states in Task 2.
 - Paginated groups must not skip or duplicate commits at the branch-only/shared boundary — pagination integration test in Task 1 and load-more behavior in Task 2.
 - Snapshot restoration must not be described as process restoration, and measured output must remain outside normal persistence — spike checklist in Task 3.
-- Pagination must stay consistent while history moves (new commit, rebase, base advance) — the cursor is anchored to resolved OIDs and a mismatch forces a reload; covered in Task 1 and Task 2.
+- Pagination must stay consistent while history moves (new commit, rebase, base advance) — the cursor is anchored to resolved OIDs and a mismatch forces a reload; covered in Task 1b and Task 2.
 - Squash-merged branches stay "only reachable" by definition; the UI must not imply "unmerged" — wording reviewed in Task 2.
 - Automatic base detection can be wrong for gitflow repositories; the explicit base selector (Tasks 1 and 2) is the escape hatch and must never silently fall back to a different base.
 
 ## Deferred Decisions
 
-- **Cost of `--topo-order` on large repositories:** `git rev-list --topo-order` may walk the whole graph before emitting the first record, and `--skip` is O(offset). Decide the ordering mode and page strategy only after measuring a large reference repository (tens of thousands of commits). Until then, the Task 1 page-size measurement is provisional and must not be treated as a performance guarantee.
+- **Cost of `--topo-order` on large repositories:** `git rev-list --topo-order` may walk the whole graph before emitting the first record, and `--skip` is O(offset). Decide the ordering mode and page strategy only after measuring a large reference repository (tens of thousands of commits). Until then, the Task 1b page-size measurement is provisional and must not be treated as a performance guarantee.
 - **Measurable "large history" acceptance threshold:** the spec criterion "loads incrementally without blocking terminal input" has no fixture size or threshold yet. Define the fixture and a pass/fail limit together with the item above; Task 2's manual check records a baseline only, not a pass.
 
 ---
 
-### Task 1: Read-only Git Commit History API
+### Task 1a: Commit History Types, Parser and Base Detection
 
 **Files:**
-- Modify: `src-tauri/src/git.rs` (commit history result/cursor types, base resolution, parsing, and command)
-- Modify: `src-tauri/src/lib.rs` (register the history command)
+- Modify: `src-tauri/src/git.rs` (commit history result/cursor types, base resolution, parsing, command, and `head_oid` on `GitStatusResult`)
+- Modify: `src-tauri/src/lib.rs` (register the history commands)
 - Test: `src-tauri/src/git.rs` unit and temporary-repository integration tests
 
 **Interfaces:**
 - Add `GitCommitGroup::{BranchOnly, Shared, Flat}` serialized as `branch_only`, `shared`, and `flat`.
 - Add `GitCommitInfo { hash: String, short_hash: String, subject: String, author: String, commit_time: i64, group: GitCommitGroup }`. `commit_time` is the committer timestamp (`%ct`), which changes on rebase or amend; the UI labels it as the commit date, not the authoring date.
 - Add `GitCommitCursor { group: GitCommitGroup, offset: u32, head_oid: String, base_oid: Option<String> }`; the OIDs are the ones resolved when the first page was served.
-- Add `GitCommitHistoryPage { branch: Option<String>, base: Option<String>, partial_history: bool, commits: Vec<GitCommitInfo>, next_cursor: Option<GitCommitCursor> }`.
-- Add `git_get_commit_history(worktree_path: String, base_ref: Option<String>, cursor: Option<GitCommitCursor>) -> Result<GitCommitHistoryPage, String>`; select page size after measuring representative test repositories and keep it in one named constant.
-- `base_ref` is an explicit user-chosen base (for gitflow repositories where `develop`, not `origin/HEAD`, is the real base). When present it replaces automatic detection; it must be an existing local or remote branch name, is validated against the branch list and resolved to an OID like any other ref, and an invalid or unresolvable value returns an explicit error state instead of falling back silently. Add `base_source: auto | explicit` to `GitCommitHistoryPage` so the UI can label how the base was chosen.
+- Add `GitBaseSource::{Auto, Explicit}` serialized as `auto` and `explicit`, and `GitHeadState::{Branch, Detached, Unborn}` serialized as `branch`, `detached`, `unborn`.
+- Add `GitCommitHistoryPage { branch: Option<String>, head_state: GitHeadState, head_oid: Option<String>, base: Option<String>, base_source: GitBaseSource, partial_history: bool, reset: bool, commits: Vec<GitCommitInfo>, next_cursor: Option<GitCommitCursor> }`. `head_state` drives the detached/no-commits UI states; `head_oid` lets the UI compare against later status polls.
+- Add `git_get_commit_history(worktree_path: String, base_ref: Option<String>, cursor: Option<GitCommitCursor>, request_id: String) -> Result<GitCommitHistoryPage, String>` and `git_cancel_commit_history(request_id: String)`; select page size after measuring representative test repositories and keep it in one named constant.
+- Prerequisite: `GitStatusResult` currently exposes only `entries`; add `head_oid: Option<String>` (resolved via the same `rev-parse --verify` helper, `None` when unborn) so Task 2 can detect HEAD changes from status polling. Cover it with a status test.
+- `base_ref` is an explicit user-chosen base (for gitflow repositories where `develop`, not `origin/HEAD`, is the real base). When present it replaces automatic detection; it must be an existing local or remote branch name, is validated against the branch list and resolved to an OID like any other ref, and an invalid or unresolvable value returns an explicit error state instead of falling back silently. `base_source` lets the UI label how the base was chosen. The existing branch listing (`GitBranchInfo` with `is_remote`, built from `refs/heads` and `refs/remotes`, excluding symbolic refs such as `origin/HEAD`) already covers local and remote branches, so it is the source for the selector and the validation.
 - Resolve the selected worktree's `HEAD`; apply the base detection order and flat/shallow behavior from the design. Return commits in topological order within each group and transition the cursor from branch-only to shared when applicable.
 - If a supplied cursor's `head_oid` or `base_oid` no longer matches the freshly resolved values, do not page: return a first page for the new state with a flag the UI can use to reset (add `reset: bool` to `GitCommitHistoryPage`).
 - Shared history is built from `git merge-base --all <head_oid> <base_oid>` (all merge bases, not one); no merge base means an empty shared group.
 
+- [ ] Add compiling stubs first (types, `parse_commit_history` returning an error, command signatures) so the new tests fail on assertions rather than on compilation.
 - [ ] Add parser tests for empty history, Unicode subject/author, multiple records, malformed/truncated records, and non-UTF-8 bytes in subject/author (decode with `String::from_utf8_lossy`, never fail the whole page); assert hashes and metadata remain associated with the right commit.
 - [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_commit_history`; confirm the new parser tests fail before implementation.
 - [ ] Add temporary-repository integration tests for linear branch-only/shared history, a merged side branch, selected branch equal to base, and no detected base.
-- [ ] Add integration tests for detached `HEAD`, unborn branch, shallow clone, stale/missing base, and pagination with no duplicate or missing commit IDs.
+- [ ] Add integration tests for detached `HEAD`, unborn branch, shallow clone, and stale/missing base.
+- [ ] Add the `head_oid` field to `GitStatusResult` with a test.
+- [ ] Implement the types, safe Git query helpers (OID resolution, `--end-of-options`), parser, and base detection; run `cargo test --manifest-path src-tauri/Cargo.toml commit_history` for this subset.
+
+### Task 1b: Pagination, Reset, Explicit Base and Cancellation
+
+**Files:** same as Task 1a.
+
+- [ ] Add an integration test for pagination with no duplicate or missing commit IDs across the branch-only/shared boundary.
 - [ ] Add integration tests for: base ahead of `HEAD` and diverged base (branch rebased on a base that later moved), unrelated histories (no merge base), criss-cross merge with multiple merge bases, and a squash-merged branch (commits stay branch-only).
 - [ ] Add a test that advancing `HEAD` (new commit) or the base between page requests returns `reset: true` with a fresh first page rather than a skewed page.
 - [ ] Add tests for an explicit `base_ref`: it overrides automatic detection (including when `origin/HEAD` points elsewhere), a non-existent or non-branch value is rejected, and `base_source` is reported correctly.
 - [ ] Add a test that a ref name starting with `-` (for example a remote or upstream value) is never interpreted as a Git option.
-- [ ] Add a test or assertion that superseding a request kills its spawned `git` process.
+- [ ] Add a test or assertion that cancelling or superseding a request (same `request_id` / worktree) kills its spawned `git` process.
 - [ ] Run the focused history tests and confirm each fixture's group, order, warning state, and next cursor.
-- [ ] Implement the result/cursor types, safe Git query helpers, base detection, and `git_get_commit_history` in `git.rs`.
-- [ ] Register the command in `lib.rs` and implement parsing for the selected NUL-delimited Git output format.
-- [ ] Measure representative local fixtures, set the named page-size constant from those observations, and record the measurement in the plan notes (provisional; see Deferred Decisions).
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml commit_history` and `cargo check --manifest-path src-tauri/Cargo.toml`; confirm all focused tests pass and the backend compiles.
+- [ ] Implement pagination, cursor validation/reset, explicit `base_ref` handling, and the cancellation registry in `git.rs`.
+- [ ] Register `git_get_commit_history` and `git_cancel_commit_history` in `lib.rs`.
+- [ ] Measure representative local fixtures, set the named page-size constant from those observations, and record the measurement in the plan notes. The value is provisional and must not be fixed as final before the Deferred Decisions are resolved.
+- [ ] Run the full `cargo test --manifest-path src-tauri/Cargo.toml commit_history` and `cargo check --manifest-path src-tauri/Cargo.toml`; confirm all focused tests (1a and 1b) pass and the backend compiles.
 
 ### Task 2: Commits Tab in the Inspector
 
@@ -88,8 +99,8 @@
 - Test: `unit-tests/commit-history.test.ts` for any extracted pure cursor/view-state logic
 
 **Interfaces:**
-- TypeScript mirrors the Rust `GitCommitInfo`, `GitCommitCursor`, and `GitCommitHistoryPage` payloads.
-- Add `gitGetCommitHistory(worktreePath: string, cursor?: GitCommitCursor): Promise<GitCommitHistoryPage>`.
+- TypeScript mirrors the Rust `GitCommitInfo`, `GitCommitCursor`, `GitBaseSource`, `GitHeadState`, and `GitCommitHistoryPage` payloads (including `base_source`, `head_state`, `head_oid`, `reset`), and `head_oid` on the status result.
+- Add `gitGetCommitHistory(worktreePath: string, requestId: string, baseRef?: string, cursor?: GitCommitCursor): Promise<GitCommitHistoryPage>` and `gitCancelCommitHistory(requestId: string)`; the view generates a fresh `request_id` per request and cancels the previous one on worktree/base change or refresh.
 - `CommitHistoryView` receives `worktreePath: string | null` and resets the page/cursor when the selected worktree changes.
 
 - [ ] Add pure state tests for appending the next page, rejecting stale responses after worktree switch, resetting when the worktree changes, and replacing (not appending) accumulated pages when a page arrives with `reset: true`.
@@ -97,7 +108,7 @@
 - [ ] Implement the typed IPC wrapper in `src/lib/git.ts`.
 - [ ] Implement the view with loading, empty, error, detached HEAD, base unavailable, shallow history, grouped history, and load-more states.
 - [ ] Add Commits as a peer tab beside Git and Files in `InspectorPanel`; preserve existing tab behavior and status polling.
-- [ ] Refresh: refetch the first page when the Commits tab is activated, and invalidate when the existing status polling observes a changed `HEAD` OID; add a manual refresh control. Never poll the history query itself.
+- [ ] Refresh: refetch the first page when the Commits tab is activated, and invalidate when the existing status polling observes a changed `head_oid` (added in Task 1a); add a manual refresh control. Never poll the history query itself.
 - [ ] Show the base label and a short note that "only reachable" is graph reachability (squash-merged or rebased commits can still appear in that group).
 - [ ] Add an explicit base selector populated from the existing branch listing, with an "Automatic" entry that restores detection; show whether the current base is automatic or explicit. Keep the choice in memory per worktree for the session only (no SQLite persistence in M2) and reset the page state when it changes.
 - [ ] Extend the pure state tests: changing the base resets accumulated pages, and a stale response for a previous base is rejected.
