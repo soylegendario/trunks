@@ -13,10 +13,10 @@ When starting a new session, **every agent MUST perform the following steps in o
 1. **Read this file (`AGENTS.md`)** to review operating rules and constraints.
 2. **Consult the current project status**:
    - Review the "Current Project Status and Roadmap" section in this file ([`AGENTS.md`](AGENTS.md)).
-   - Review the active plan in [`docs/superpowers/plans/`](docs/superpowers/plans/) (currently [`docs/superpowers/plans/2026-11-21-m1-git-worktrees.md`](docs/superpowers/plans/2026-11-21-m1-git-worktrees.md)).
+   - Review the active plan in [`docs/superpowers/plans/`](docs/superpowers/plans/) (currently [`docs/superpowers/plans/2026-11-22-m2-git-history-and-terminal-continuity.md`](docs/superpowers/plans/2026-11-22-m2-git-history-and-terminal-continuity.md)).
 3. **Identify the immediate task**:
    - Locate the first pending item (`- [ ]`) in the active plan.
-   - Contrast requirements with [`docs/spec.md`](docs/spec.md), [`docs/milestones/m1-git-worktrees.md`](docs/milestones/m1-git-worktrees.md), and the corresponding ADR in [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md).
+   - Contrast requirements with [`docs/spec.md`](docs/spec.md), [`docs/superpowers/specs/2026-11-22-m2-git-history-and-terminal-continuity-design.md`](docs/superpowers/specs/2026-11-22-m2-git-history-and-terminal-continuity-design.md), and the corresponding ADR in [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md).
 
 ---
 
@@ -62,7 +62,7 @@ Every agent must respect the principles defined in [`docs/intent.md`](docs/inten
 ## 4. Current Project Status and Roadmap
 
 ### Current Status
-- **Milestone:** Milestone 1 (M1 — Worktree-First Project Workflow & Git Integration) **completed** and merged into `main`; pending planning for Milestone 2 (M2).
+- **Milestone:** Milestone 1 (M1 — Worktree-First Project Workflow & Git Integration) **completed** and merged into `main`; M2 design approved and implementation plan drafted, pending plan review.
 - **Progress:**
   - [x] **Milestone 0 Completed:** Scaffold Tauri 2 + Svelte 5, native PTY and terminal fidelity (`portable-pty` + xterm.js), transactional SQLite persistence (WAL mode) with path reconciliation and cold restart recovery without ghost shells (`docs/milestones/m0-results.md`, `docs/adr/0001-stack.md`).
   - [x] **M1 - Task 1 Completed:** Native Git service in Rust (`src-tauri/src/git.rs`; 8 Tauri commands registered in this task, 9 with `git_read_file` added in Task 4; 43 tests including integration against real `git`).
@@ -71,7 +71,7 @@ Every agent must respect the principles defined in [`docs/intent.md`](docs/inten
   - [x] **M1 - Task 3 Completed:** Terminal tabs bound to Git-reported worktree paths (`findTabForWorktree` in `project-logic.ts`; opening terminal focuses existing tab; button disabled on prunable worktrees; `pty_create` validates cwd existence).
   - [x] **M1 - Task 4 Completed:** Read-only right inspector panel (`InspectorPanel`, `GitStatusView`, `DiffViewer`, `FileTree`) with polling; Git status grouped by collapsible folders; files and diffs opened as central read-only tabs (`FileViewer`, `git_read_file`); resizable panels with shortcuts `Cmd+B` / `Cmd+L`.
   - [x] **M1 - Task 5 Completed:** Acceptance criteria `AC-M1-01` through `AC-M1-08` validated manually by user; `npm run check`, `build`, `test:unit` (16), and `cargo test` (43) all pass. Results documented in `docs/milestones/m1-results.md`.
-- **Next Objective:** Plan Milestone 2 (M2 — Terminal Visual History & Enhanced Workspaces).
+- **Next Objective:** Review and approve [`docs/superpowers/plans/2026-11-22-m2-git-history-and-terminal-continuity.md`](docs/superpowers/plans/2026-11-22-m2-git-history-and-terminal-continuity.md), then implement the Git commit history tab and run the macOS snapshot spike. Windows/Linux validation remains deferred until external testers are available.
 
 ---
 
