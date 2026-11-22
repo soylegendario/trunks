@@ -65,9 +65,10 @@
 - If a supplied cursor's `head_oid` or `base_oid` no longer matches the freshly resolved values, do not page: return a first page for the new state with a flag the UI can use to reset (add `reset: bool` to `GitCommitHistoryPage`).
 - Shared history is built from `git merge-base --all <head_oid> <base_oid>` (all merge bases, not one); no merge base means an empty shared group.
 
-- [ ] Add compiling stubs first (types, `parse_commit_history` returning an error, command signatures) so the new tests fail on assertions rather than on compilation.
-- [ ] Add parser tests for empty history, Unicode subject/author, multiple records, malformed/truncated records, and non-UTF-8 bytes in subject/author (decode with `String::from_utf8_lossy`, never fail the whole page); assert hashes and metadata remain associated with the right commit.
-- [ ] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_commit_history`; confirm the new parser tests fail before implementation.
+- [x] Add compiling stubs first (types, `parse_commit_history` returning an error, command signatures) so the new tests fail on assertions rather than on compilation.
+- [x] Add parser tests for empty history, Unicode subject/author, multiple records, malformed/truncated records, and non-UTF-8 bytes in subject/author (decode with `String::from_utf8_lossy`, never fail the whole page); assert hashes and metadata remain associated with the right commit.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml parses_commit_history`; confirm the new parser tests fail before implementation.
+  - Note: 3 of 4 failed on assertions; `rejects_malformed_records` passed vacuously against the erroring stub. The parser is now implemented (`parse_commit_history`, format `%H%x00%h%x00%an%x00%ct%x00%s%x1e`) and all 4 pass. Still pending in the final implement step: `git log` query helper, OID resolution, base detection, `head_oid`. The command and cancel stubs are registered in `lib.rs` but still return an error / no-op.
 - [ ] Add temporary-repository integration tests for linear branch-only/shared history, a merged side branch, selected branch equal to base, and no detected base.
 - [ ] Add integration tests for detached `HEAD`, unborn branch, shallow clone, and stale/missing base.
 - [ ] Add the `head_oid` field to `GitStatusResult` with a test.

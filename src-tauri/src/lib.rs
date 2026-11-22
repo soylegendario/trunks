@@ -9,7 +9,8 @@ use db::{
 use pty::{get_system_info, pty_create, pty_kill, pty_list, pty_resize, pty_write, PtyManager};
 use git::{
     git_create_worktree, git_get_diff, git_get_status, git_list_branches, git_list_files,
-    git_list_worktrees, git_read_file, git_remove_worktree, git_validate_repo,
+    git_cancel_commit_history, git_get_commit_history, git_list_worktrees, git_read_file,
+    git_remove_worktree, git_validate_repo,
 };
 use tauri::Manager;
 
@@ -45,6 +46,8 @@ pub fn run() {
             git_create_worktree,
             git_remove_worktree,
             git_get_status,
+            git_get_commit_history,
+            git_cancel_commit_history,
             git_get_diff,
             git_list_files,
             git_read_file,

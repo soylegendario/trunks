@@ -249,6 +249,122 @@ pub fn parse_status_porcelain_v2_z(input: &[u8]) -> Result<GitStatusResult, Stri
     Ok(GitStatusResult { entries })
 }
 
+#[derive(Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitCommitGroup {
+    BranchOnly,
+    Shared,
+    Flat,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct GitCommitInfo {
+    pub hash: String,
+    pub short_hash: String,
+    pub subject: String,
+    pub author: String,
+    /// Committer timestamp (`%ct`); changes on rebase or amend.
+    pub commit_time: i64,
+    pub group: GitCommitGroup,
+}
+
+#[derive(Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct GitCommitCursor {
+    pub group: GitCommitGroup,
+    pub offset: u32,
+    pub head_oid: String,
+    pub base_oid: Option<String>,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitBaseSource {
+    Auto,
+    Explicit,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitHeadState {
+    Branch,
+    Detached,
+    Unborn,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct GitCommitHistoryPage {
+    pub branch: Option<String>,
+    pub head_state: GitHeadState,
+    pub head_oid: Option<String>,
+    pub base: Option<String>,
+    pub base_source: GitBaseSource,
+    pub partial_history: bool,
+    pub reset: bool,
+    pub commits: Vec<GitCommitInfo>,
+    pub next_cursor: Option<GitCommitCursor>,
+}
+
+/// Parses `git log/rev-list --format=%H%x00%h%x00%an%x00%ct%x00%s%x1e` output.
+/// Fields are NUL-separated and records end with `\x1e`; text is decoded lossily.
+pub fn parse_commit_history(
+    input: &[u8],
+    group: GitCommitGroup,
+) -> Result<Vec<GitCommitInfo>, String> {
+    let mut pieces: Vec<&[u8]> = input.split(|b| *b == 0x1e).collect();
+    // Whatever follows the last terminator must be blank; otherwise the output was cut short.
+    let tail = pieces.pop().unwrap_or(&[]);
+    if tail.iter().any(|b| !b.is_ascii_whitespace()) {
+        return Err("truncated commit history record".to_string());
+    }
+    let lossy = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    let mut commits = Vec::with_capacity(pieces.len());
+    for piece in pieces {
+        // `git log` separates records with a newline.
+        let start = piece
+            .iter()
+            .position(|b| !b.is_ascii_whitespace())
+            .unwrap_or(piece.len());
+        let record = &piece[start..];
+        if record.is_empty() {
+            continue;
+        }
+        let f: Vec<&[u8]> = record.splitn(5, |b| *b == 0).collect();
+        if f.len() != 5 {
+            return Err(format!(
+                "malformed commit history record '{}'",
+                lossy(record)
+            ));
+        }
+        let commit_time = lossy(f[3])
+            .parse::<i64>()
+            .map_err(|_| format!("invalid commit timestamp '{}'", lossy(f[3])))?;
+        commits.push(GitCommitInfo {
+            hash: lossy(f[0]),
+            short_hash: lossy(f[1]),
+            author: lossy(f[2]),
+            commit_time,
+            subject: lossy(f[4]),
+            group,
+        });
+    }
+    Ok(commits)
+}
+
+#[tauri::command]
+pub async fn git_get_commit_history(
+    _worktree_path: String,
+    _base_ref: Option<String>,
+    _cursor: Option<GitCommitCursor>,
+    _request_id: String,
+) -> Result<GitCommitHistoryPage, String> {
+    Err("git_get_commit_history is not implemented".to_string())
+}
+
+#[tauri::command]
+pub async fn git_cancel_commit_history(_request_id: String) -> Result<(), String> {
+    Ok(())
+}
+
 /// Runs `git <args>` inside `cwd` without a shell and without blocking the UI thread.
 /// `op` names the operation in error messages. No timeout is imposed in M1.
 async fn run_git(cwd: &Path, args: &[&str], op: &str) -> Result<Vec<u8>, String> {
@@ -863,6 +979,71 @@ locked
 
         assert!(resolve_contained(&tmp.0, "link").is_err(), "symlink itself");
         assert!(resolve_contained(&tmp.0, "link/secret").is_err(), "through symlink");
+    }
+
+    // ---- commit history parser ----
+
+    fn rec(hash: &str, short: &str, author: &[u8], time: &str, subject: &[u8]) -> Vec<u8> {
+        let mut v = Vec::new();
+        for (i, f) in [hash.as_bytes(), short.as_bytes(), author, time.as_bytes(), subject]
+            .iter()
+            .enumerate()
+        {
+            if i > 0 {
+                v.push(0);
+            }
+            v.extend_from_slice(f);
+        }
+        v.push(0x1e);
+        v
+    }
+
+    #[test]
+    fn parses_commit_history_empty_input() {
+        assert!(parse_commit_history(b"", GitCommitGroup::Flat).unwrap().is_empty());
+        assert!(parse_commit_history(b"\n", GitCommitGroup::Flat).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parses_commit_history_multiple_records_with_unicode() {
+        let mut input = rec(&"a".repeat(40), "aaaaaaa", "Ñandú Pérez".as_bytes(), "1700000000", "fix: ¡acentos! | pipe".as_bytes());
+        input.push(b'\n'); // git log adds a newline between records
+        input.extend(rec(&"b".repeat(40), "bbbbbbb", b"Bob", "1600000000", "日本語 subject".as_bytes()));
+
+        let got = parse_commit_history(&input, GitCommitGroup::BranchOnly).expect("parse");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].hash, "a".repeat(40));
+        assert_eq!(got[0].short_hash, "aaaaaaa");
+        assert_eq!(got[0].author, "Ñandú Pérez");
+        assert_eq!(got[0].commit_time, 1_700_000_000);
+        assert_eq!(got[0].subject, "fix: ¡acentos! | pipe");
+        assert_eq!(got[0].group, GitCommitGroup::BranchOnly);
+        assert_eq!(got[1].hash, "b".repeat(40));
+        assert_eq!(got[1].author, "Bob");
+        assert_eq!(got[1].subject, "日本語 subject");
+        assert_eq!(got[1].commit_time, 1_600_000_000);
+    }
+
+    #[test]
+    fn parses_commit_history_decodes_non_utf8_lossily() {
+        let input = rec(&"c".repeat(40), "ccccccc", b"Jos\xe9", "1", b"caf\xe9 ok");
+        let got = parse_commit_history(&input, GitCommitGroup::Flat).expect("never fails the page");
+        assert_eq!(got.len(), 1);
+        assert!(got[0].author.starts_with("Jos") && got[0].author.contains('\u{fffd}'));
+        assert!(got[0].subject.contains('\u{fffd}') && got[0].subject.ends_with(" ok"));
+    }
+
+    #[test]
+    fn parses_commit_history_rejects_malformed_records() {
+        // too few fields
+        assert!(parse_commit_history(b"abc\0def\x1e", GitCommitGroup::Flat).is_err());
+        // non-numeric timestamp
+        let bad_time = rec(&"d".repeat(40), "ddddddd", b"A", "not-a-number", b"s");
+        assert!(parse_commit_history(&bad_time, GitCommitGroup::Flat).is_err());
+        // truncated: the last record has no terminator
+        let mut truncated = rec(&"e".repeat(40), "eeeeeee", b"A", "1", b"s");
+        truncated.pop();
+        assert!(parse_commit_history(&truncated, GitCommitGroup::Flat).is_err());
     }
 
     // ---- Integration tests: they drive the real `git` binary against temp repositories. ----
