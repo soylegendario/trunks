@@ -79,17 +79,18 @@
 
 **Files:** same as Task 1a.
 
-- [ ] Add an integration test for pagination with no duplicate or missing commit IDs across the branch-only/shared boundary.
-- [ ] Add integration tests for: base ahead of `HEAD` and diverged base (branch rebased on a base that later moved), unrelated histories (no merge base), criss-cross merge with multiple merge bases, and a squash-merged branch (commits stay branch-only).
-- [ ] Add a test that advancing `HEAD` (new commit) or the base between page requests returns `reset: true` with a fresh first page rather than a skewed page.
-- [ ] Add tests for an explicit `base_ref`: it overrides automatic detection (including when `origin/HEAD` points elsewhere), a non-existent or non-branch value is rejected, and `base_source` is reported correctly.
-- [ ] Add a test that a ref name starting with `-` (for example a remote or upstream value) is never interpreted as a Git option.
-- [ ] Add a test or assertion that cancelling or superseding a request (same `request_id` / worktree) kills its spawned `git` process.
-- [ ] Run the focused history tests and confirm each fixture's group, order, warning state, and next cursor.
-- [ ] Implement pagination, cursor validation/reset, explicit `base_ref` handling, and the cancellation registry in `git.rs`.
-- [ ] Register `git_get_commit_history` and `git_cancel_commit_history` in `lib.rs`.
-- [ ] Measure representative local fixtures, set the named page-size constant from those observations, and record the measurement in the plan notes. The value is provisional and must not be fixed as final before the Deferred Decisions are resolved.
-- [ ] Run the full `cargo test --manifest-path src-tauri/Cargo.toml commit_history` and `cargo check --manifest-path src-tauri/Cargo.toml`; confirm all focused tests (1a and 1b) pass and the backend compiles.
+- [x] Add an integration test for pagination with no duplicate or missing commit IDs across the branch-only/shared boundary.
+- [x] Add integration tests for: base ahead of `HEAD` and diverged base (branch rebased on a base that later moved), unrelated histories (no merge base), criss-cross merge with multiple merge bases, and a squash-merged branch (commits stay branch-only).
+- [x] Add a test that advancing `HEAD` (new commit) or the base between page requests returns `reset: true` with a fresh first page rather than a skewed page.
+- [x] Add tests for an explicit `base_ref`: it overrides automatic detection (including when `origin/HEAD` points elsewhere), a non-existent or non-branch value is rejected, and `base_source` is reported correctly.
+- [x] Add a test that a ref name starting with `-` (for example a remote or upstream value) is never interpreted as a Git option.
+- [x] Add a test or assertion that cancelling or superseding a request (same `request_id` / worktree) kills its spawned `git` process.
+- [x] Run the focused history tests and confirm each fixture's group, order, warning state, and next cursor.
+- [x] Implement pagination, cursor validation/reset, explicit `base_ref` handling, and the cancellation registry in `git.rs`.
+- [x] Register `git_get_commit_history` and `git_cancel_commit_history` in `lib.rs`.
+- [x] Measure representative local fixtures, set the named page-size constant from those observations, and record the measurement in the plan notes. The value is provisional and must not be fixed as final before the Deferred Decisions are resolved.
+- [x] Run the full `cargo test --manifest-path src-tauri/Cargo.toml commit_history` and `cargo check --manifest-path src-tauri/Cargo.toml`; confirm all focused tests (1a and 1b) pass and the backend compiles.
+  - Note: Task 1b done; 67 backend tests pass. Cancellation is tested at the registry level (cancel by `request_id`, supersede by worktree) with a slow future; that dropping the future kills the real `git` child relies on `kill_on_drop(true)` in `run_git` and is NOT covered by an automated test. Page size stays at 200 (provisional): on a 30,000-commit linear fixture `git log --topo-order -n 50..500` and `--skip 29000 -n 200` each took ~0.05 s, so the fixture does not discriminate; large merge-heavy repos remain unmeasured (Deferred Decisions).
 
 ### Task 2: Commits Tab in the Inspector
 
