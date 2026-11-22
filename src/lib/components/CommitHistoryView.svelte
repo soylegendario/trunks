@@ -19,10 +19,12 @@
   let {
     worktreePath,
     headOid,
+    onOpenCommit,
   }: {
     worktreePath: string | null;
     /** HEAD reported by the status poll; undefined until the first poll arrives. */
     headOid?: string | null;
+    onOpenCommit?: (oid: string, shortHash: string, subject: string) => void;
   } = $props();
 
   // Explicit base per worktree, kept in memory for the session only.
@@ -174,11 +176,16 @@
     {#each sections as section}
       {#if section.title}<div class="group">{section.title}</div>{/if}
       {#each section.commits as c (c.hash)}
-        <div class="row" title={`${c.hash}\n${c.author}`}>
+        <button
+          type="button"
+          class="row"
+          title={`${c.hash}\n${c.author}`}
+          onclick={() => onOpenCommit?.(c.hash, c.short_hash, c.subject)}
+        >
           <span class="hash">{c.short_hash}</span>
           <span class="subject">{c.subject}</span>
           <span class="meta">{c.author} · {fmtDate(c.commit_time)}</span>
-        </div>
+        </button>
       {/each}
     {/each}
 
@@ -205,7 +212,8 @@
   .hint.error { color: #f85149; }
   .hint.warn { color: #d29922; }
   .group { padding: 4px 10px; background: #161b22; color: #8b949e; border-top: 1px solid #30363d; border-bottom: 1px solid #30363d; position: sticky; top: 0; }
-  .row { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; padding: 3px 10px; }
+  .row { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; padding: 3px 10px; width: 100%; background: none; border: 0; font: inherit; text-align: left; cursor: pointer; color: inherit; }
+  .row:hover, .row:focus-visible { background: #161b22; outline: none; }
   .hash { font-family: monospace; color: #9448f8; }
   .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c9d1d9; }
   .meta { grid-column: 2; color: #6e7681; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -18,7 +18,7 @@
 - Git commands run asynchronously, pass arguments separately, and do not invoke a shell.
 - Resolve every ref (`HEAD`, upstream, base) once per request to a full OID with `git rev-parse --verify --end-of-options <ref>`; every later Git command in that request uses only those OIDs, so a ref name can never be parsed as an option and both group queries see the same graph.
 - Every spawned Git process uses `kill_on_drop(true)`. Tauri does not cancel an in-flight command by itself, so cancellation is explicit: the frontend sends a `request_id` with each history request, and `git_cancel_commit_history(request_id)` (or a newer request for the same worktree) triggers a per-worktree cancellation token / `AbortHandle` in the backend that drops the pending future and thereby kills the spawned `git` process. A discarded response must not leave a running `git` process behind.
-- Commit inspection is read-only; no checkout, commit, cherry-pick, revert, or staging actions.
+- Commit inspection is read-only; no checkout, commit, cherry-pick, revert, or staging actions. Commit diffs (Task 2b) are always against the first parent; never a combined merge diff.
 - “Only reachable” means graph reachability relative to the detected base, not author or origin.
 - Do not include commits from branches that are not reachable from the selected worktree's `HEAD`.
 - No unambiguous base means a flat history; shallow history means a flat partial history with a visible warning.
@@ -119,6 +119,36 @@
 - [x] Run `npm run test:unit`, `npm run check`, and `npm run build`; confirm tests pass, Svelte reports no errors/warnings, and the production build succeeds.
 - [ ] Manually inspect the view with a disposable repository covering a linear branch, merge, missing base, detached HEAD, and a large history; confirm terminal input and navigation remain responsive.
   - Note: Task 2 implemented except the manual inspection (above, still `[ ]`). `check` 0 errors/warnings, `build` ok, `test:unit` 22 pass. Not exercised in the running app yet; effects wrap `load` in `untrack` to avoid reactive loops, which needs confirming at runtime.
+
+### Task 2b: Commit Diff Against First Parent
+
+**Files:**
+- Modify: `src-tauri/src/git.rs` (`git_get_commit_diff` command and tests)
+- Modify: `src-tauri/src/lib.rs` (register the command)
+- Modify: `src/lib/git.ts` (`gitGetCommitDiff` wrapper)
+- Modify: `src/routes/+page.svelte` (extend the central tab model with a commit kind and open it)
+- Modify: `src/lib/components/FileViewer.svelte` or create `src/lib/components/CommitDiffViewer.svelte` (load and render a commit diff with `DiffViewer`)
+- Modify: `src/lib/components/CommitHistoryView.svelte` and `src/lib/components/InspectorPanel.svelte` (row click and `onOpenCommit` prop)
+- Test: `src-tauri/src/git.rs` integration tests; `unit-tests/` for any extracted tab-identity logic
+
+**Interfaces:**
+- Add `git_get_commit_diff(worktree_path: String, oid: String) -> Result<GitCommitDiff, String>` with `GitCommitDiff { diff: String, truncated: bool }`.
+- `oid` must match 40 lowercase hex characters (else error), is verified as an existing commit (`rev-parse --verify --end-of-options <oid>^{commit}`), and is passed after `--end-of-options`. Run `git show --format= --first-parent -m --patch --end-of-options <oid>` (pass arguments separately, no shell, `kill_on_drop`). Always first parent: merges show the diff against parent 1, never a combined diff. Root commits show full additions.
+- Output is capped by one named constant (provisional; record the chosen value). Over the cap, cut at a line boundary and return `truncated: true`; the UI shows a visible notice.
+- Central tabs gain a commit kind keyed by `worktreePath|commit|oid`, so reopening focuses the existing tab and it is distinct from file diff tabs.
+- `CommitHistoryView` accepts `onOpenCommit?: (oid: string, shortHash: string, subject: string) => void`; rows become clickable buttons (keyboard accessible).
+
+- [x] Add integration tests: linear commit diff; root commit (all additions); merge commit diffs against the first parent only (changes from the second parent's side appear, first-parent-only content does not repeat); empty commit (no textual changes); binary file; non-hex, unknown, and option-like (`-x`) oids are rejected; truncation sets `truncated: true`.
+- [ ] Run the new tests; confirm they fail against a stub before implementing.
+  - Note: skipped. Implementation was written before the tests, so the failing-first run did not happen.
+- [x] Implement `git_get_commit_diff` and register it in `lib.rs`.
+- [x] Add `gitGetCommitDiff` in `git.ts`.
+- [x] Extend the central tab model and viewer: open on row click, reuse an existing tab for the same commit, title `<short_hash> <subject>`, loading/error/empty/truncated states, stale-response guard when the worktree changes.
+- [x] Add pure unit tests for commit-tab identity (reopen focuses, distinct from file diff tabs) if that logic is extracted.
+- [x] Run `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run test:unit`, `npm run check`, `npm run build`.
+  - Note: cargo test 73 pass, test:unit 26 pass, check 0 errors/warnings, build ok. The diff cap is `MAX_COMMIT_DIFF_BYTES` = 1 MiB (provisional). Output is read incrementally and `git show` is killed once the cap is exceeded.
+- [ ] Manually inspect with a disposable repository: linear commit, merge (first-parent diff), root commit, large commit (truncation notice), and confirm terminal input stays responsive.
+  - Note: not done; needs someone to use the running app.
 
 ### Task 3: Disposable macOS xterm Snapshot Spike
 

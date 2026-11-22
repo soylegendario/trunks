@@ -8,9 +8,11 @@
   let {
     worktreePath,
     onOpenFile,
+    onOpenCommit,
   }: {
     worktreePath: string | null;
     onOpenFile?: (path: string, mode: "file" | "diff", cached: boolean) => void;
+    onOpenCommit?: (oid: string, shortHash: string, subject: string) => void;
   } = $props();
 
   const POLL_MS = 2500;
@@ -75,7 +77,7 @@
     {:else if tab === "git"}
       <GitStatusView {worktreePath} {status} {error} {onOpenFile} />
     {:else if tab === "commits"}
-      <CommitHistoryView {worktreePath} headOid={status ? status.head_oid : undefined} />
+      <CommitHistoryView {worktreePath} headOid={status ? status.head_oid : undefined} {onOpenCommit} />
     {:else}
       <div class="tree">
         <FileTree {worktreePath} {refreshKey} {onOpenFile} />

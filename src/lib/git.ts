@@ -191,6 +191,16 @@ export async function gitGetCommitHistory(
   });
 }
 
+export interface GitCommitDiff {
+  diff: string;
+  truncated: boolean;
+}
+
+/** Diff of one commit against its first parent. `oid` is the full 40-hex id. */
+export async function gitGetCommitDiff(worktreePath: string, oid: string): Promise<GitCommitDiff> {
+  return await invoke<GitCommitDiff>("git_get_commit_diff", { worktreePath, oid });
+}
+
 /** Cancels an in-flight history request; unknown ids are ignored. */
 export async function gitCancelCommitHistory(requestId: string): Promise<void> {
   return await invoke("git_cancel_commit_history", { requestId });

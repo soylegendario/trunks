@@ -50,7 +50,7 @@ M2 adds useful commit history to the existing read-only worktree inspector, then
   - **Only reachable from `<branch>`**: commits reachable from the selected branch but not from the detected base.
   - **Shared history with `<base>`**: commits reachable from both tips.
 - Keep a clear separator between the groups. Use a topological ordering within each group so parent/merge relationships remain readable.
-- Include a short hash, subject, author, and commit date in each row. Detailed commit diffs are outside the first slice.
+- Include a short hash, subject, author, and commit date in each row. Clicking a row opens that commit's diff (see "Commit diff" below).
 - Bound the initial query and load older entries incrementally; do not invent a numeric history or latency budget before measuring representative repositories.
 
 ### Base detection
@@ -71,7 +71,16 @@ For detached `HEAD`, show a flat reachable history and indicate that no branch i
 - Keep the query read-only and asynchronous. Handle an unborn branch, missing/stale remote base, shallow history, and Git errors with explicit UI states rather than fabricated entries.
 - In a shallow repository, show the commits currently reachable from the selected tip with a visible partial-history notice and a flat list. Do not draw the branch/base separator because the missing ancestry can make that grouping incomplete.
 - Do not persist commit results; refresh when the selected worktree changes and on an explicit refresh/focus path consistent with the inspector.
-- First-slice acceptance does not include opening commit diffs. Add that only after the list and grouping behavior is reviewed.
+- Opening a commit diff was added after the list and grouping behavior were reviewed (Task 2b); it does not change the list or grouping.
+
+### Commit diff
+
+- Clicking a commit row opens a read-only central tab showing that commit's diff, rendered with the existing `DiffViewer`.
+- The diff is always taken against the **first parent** (`git show --format= --first-parent -m --patch`). A merge commit shows what it brought into the first-parent line; there is no combined (`-c`/`--cc`) diff. A root commit shows its full content as additions.
+- The OID comes from the history list, must be validated as 40 hex characters, verified as a commit, and passed as a separate argument after `--end-of-options`. The query is read-only and never persisted.
+- Output is size-bounded; when truncated the tab says so explicitly instead of showing a partial diff as complete.
+- Binary files appear as Git reports them (no content). A commit with no textual changes shows "No textual changes."
+- The tab title identifies the short hash and is distinct from working-tree diff tabs of the same file.
 
 ### Acceptance criteria
 
@@ -83,6 +92,7 @@ For detached `HEAD`, show a flat reachable history and indicate that no branch i
 - A shallow repository displays its available commits with a partial-history notice and no branch/base separator.
 - Large history loads incrementally without blocking terminal input or navigation.
 - Existing Git and Files inspector behavior remains available in its own tabs.
+- Clicking a commit opens a read-only central diff tab against its first parent; a merge fixture shows the first-parent diff, a root commit shows all additions, and an oversized diff shows a truncation notice.
 
 ## Terminal snapshot spike
 

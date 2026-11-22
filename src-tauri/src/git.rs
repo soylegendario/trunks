@@ -1075,6 +1075,94 @@ pub async fn git_get_diff(
     Ok(diff)
 }
 
+/// Cap on the text returned for one commit diff. Provisional: 1 MiB, matching the other
+/// viewer limits; revisit after real use.
+const MAX_COMMIT_DIFF_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GitCommitDiff {
+    pub diff: String,
+    pub truncated: bool,
+}
+
+fn is_full_oid(oid: &str) -> bool {
+    oid.len() == 40 && oid.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Diff of one commit against its first parent (root commits: all additions). Output is
+/// read incrementally and the Git process is killed once `max_bytes` is exceeded.
+async fn commit_diff(
+    worktree_path: &str,
+    oid: &str,
+    max_bytes: usize,
+) -> Result<GitCommitDiff, String> {
+    use tokio::io::AsyncReadExt;
+
+    if !is_full_oid(oid) {
+        return Err("commit id must be 40 lowercase hexadecimal characters".to_string());
+    }
+    let cwd = Path::new(worktree_path);
+    let spec = format!("{oid}^{{commit}}");
+    run_git(
+        cwd,
+        &["rev-parse", "--verify", "--quiet", "--end-of-options", &spec],
+        "git rev-parse --verify",
+    )
+    .await
+    .map_err(|_| format!("commit {oid} does not exist in this repository"))?;
+
+    let mut child = tokio::process::Command::new("git")
+        .args([
+            "--no-optional-locks",
+            "show",
+            "--format=",
+            "--first-parent",
+            "-m",
+            "--patch",
+            "--no-ext-diff",
+            "--no-color",
+            "--end-of-options",
+            oid,
+        ])
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("git show: failed to launch git: {e}"))?;
+    let mut stdout = child.stdout.take().ok_or("git show: no output pipe")?;
+    let mut bytes = Vec::new();
+    (&mut stdout)
+        .take(max_bytes as u64 + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|e| format!("git show: cannot read output: {e}"))?;
+    let truncated = bytes.len() > max_bytes;
+    if truncated {
+        drop(stdout);
+        let _ = child.kill().await;
+        bytes.truncate(max_bytes);
+        // Cut at a line boundary so a partial line is never shown.
+        match bytes.iter().rposition(|&b| b == b'\n') {
+            Some(i) => bytes.truncate(i + 1),
+            None => bytes.clear(),
+        }
+    } else {
+        let status = child.wait().await.map_err(|e| format!("git show: {e}"))?;
+        if !status.success() {
+            return Err("git show failed".to_string());
+        }
+    }
+    Ok(GitCommitDiff { diff: String::from_utf8_lossy(&bytes).into_owned(), truncated })
+}
+
+#[tauri::command]
+pub async fn git_get_commit_diff(worktree_path: String, oid: String) -> Result<GitCommitDiff, String> {
+    commit_diff(&worktree_path, &oid, MAX_COMMIT_DIFF_BYTES).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1846,6 +1934,100 @@ locked
 
         assert_eq!(git_get_diff(s(&repo), Some("new.txt".into()), true).await.unwrap(), "");
         assert_eq!(git_get_diff(s(&repo), Some("ignored.txt".into()), false).await.unwrap(), "");
+    }
+
+    // ---- Commit diff against the first parent ----
+
+    fn head_oid_sync(repo: &Path) -> String {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    }
+
+    async fn diff_of(repo: &Path, oid: &str) -> GitCommitDiff {
+        commit_diff(repo.to_str().unwrap(), oid, MAX_COMMIT_DIFF_BYTES)
+            .await
+            .expect("commit diff")
+    }
+
+    #[tokio::test]
+    async fn commit_diff_linear_commit() {
+        let tmp = TempDir::new("cdiff-linear");
+        let repo = init_repo(&tmp, "repo");
+        write_commit(&repo, "a.txt", "hello\n");
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(!d.truncated);
+        assert!(d.diff.contains("+++ b/a.txt") && d.diff.contains("+hello"), "{}", d.diff);
+    }
+
+    #[tokio::test]
+    async fn commit_diff_root_commit_is_all_additions() {
+        let tmp = TempDir::new("cdiff-root");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "--orphan", "other"]);
+        write_commit(&repo, "r.txt", "root\n");
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(d.diff.contains("new file mode") && d.diff.contains("+root"), "{}", d.diff);
+    }
+
+    #[tokio::test]
+    async fn commit_diff_merge_uses_first_parent_only() {
+        let tmp = TempDir::new("cdiff-merge");
+        let repo = init_repo(&tmp, "repo");
+        git_sync(&repo, &["checkout", "-b", "side"]);
+        write_commit(&repo, "side.txt", "from side\n");
+        git_sync(&repo, &["checkout", "-b", "feat", "main"]);
+        write_commit(&repo, "feat.txt", "from feat\n");
+        git_sync(&repo, &["merge", "--no-ff", "-m", "merge side", "side"]);
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(d.diff.contains("+from side"), "{}", d.diff);
+        assert!(!d.diff.contains("feat.txt"), "first-parent content must not repeat: {}", d.diff);
+        assert_eq!(d.diff.matches("diff --git").count(), 1, "single (non-combined) diff");
+    }
+
+    #[tokio::test]
+    async fn commit_diff_empty_commit_has_no_text() {
+        let tmp = TempDir::new("cdiff-empty");
+        let repo = init_repo(&tmp, "repo");
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(d.diff.is_empty() && !d.truncated);
+    }
+
+    #[tokio::test]
+    async fn commit_diff_binary_file_has_no_content() {
+        let tmp = TempDir::new("cdiff-binary");
+        let repo = init_repo(&tmp, "repo");
+        std::fs::write(repo.join("img.bin"), [0x89, b'P', 0, 1, 2, 3]).unwrap();
+        git_sync(&repo, &["add", "img.bin"]);
+        git_sync(&repo, &["commit", "-m", "bin"]);
+        let d = diff_of(&repo, &head_oid_sync(&repo)).await;
+        assert!(d.diff.contains("Binary files"), "{}", d.diff);
+    }
+
+    #[tokio::test]
+    async fn commit_diff_rejects_invalid_oids() {
+        let tmp = TempDir::new("cdiff-invalid");
+        let repo = init_repo(&tmp, "repo");
+        let p = repo.to_str().unwrap();
+        let unknown = "0".repeat(40);
+        for bad in ["", "HEAD", "-x", "--output=/tmp/x", "abc", &head_oid_sync(&repo).to_uppercase(), unknown.as_str()] {
+            assert!(commit_diff(p, bad, MAX_COMMIT_DIFF_BYTES).await.is_err(), "{bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_diff_truncates_at_a_line_boundary() {
+        let tmp = TempDir::new("cdiff-trunc");
+        let repo = init_repo(&tmp, "repo");
+        write_commit(&repo, "big.txt", &"line of text\n".repeat(500));
+        let oid = head_oid_sync(&repo);
+        let d = commit_diff(repo.to_str().unwrap(), &oid, 1000).await.unwrap();
+        assert!(d.truncated && d.diff.len() <= 1000 && d.diff.ends_with('\n'));
+        let full = diff_of(&repo, &oid).await;
+        assert!(!full.truncated && full.diff.starts_with(&d.diff));
     }
 
     // ---- Commit history integration ----

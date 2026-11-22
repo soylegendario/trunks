@@ -15,13 +15,17 @@
   import WorktreeList from "$lib/components/WorktreeList.svelte";
   import InspectorPanel from "$lib/components/InspectorPanel.svelte";
   import FileViewer from "$lib/components/FileViewer.svelte";
+  import CommitDiffViewer from "$lib/components/CommitDiffViewer.svelte";
+  import { commitTabId, commitTabTitle, fileTabId } from "$lib/center-tab-logic";
 
   type FileTab = {
     id: string;
     worktreePath: string;
     path: string;
-    mode: "file" | "diff";
+    mode: "file" | "diff" | "commit";
     cached: boolean;
+    oid?: string;
+    title?: string;
   };
   // Read-only file/diff tabs (not persisted across restarts).
   let fileTabs = $state<FileTab[]>([]);
@@ -34,9 +38,20 @@
   function openFileTab(path: string, mode: "file" | "diff", cached: boolean) {
     const wt = projectStore.selectedWorktreePath;
     if (!wt) return;
-    const id = `${wt}|${mode}|${cached ? 1 : 0}|${path}`;
+    const id = fileTabId(wt, mode, cached, path);
     if (!fileTabs.some((f) => f.id === id)) {
       fileTabs = [...fileTabs, { id, worktreePath: wt, path, mode, cached }];
+    }
+    activeFileId = id;
+  }
+
+  function openCommitTab(oid: string, shortHash: string, subject: string) {
+    const wt = projectStore.selectedWorktreePath;
+    if (!wt) return;
+    const id = commitTabId(wt, oid);
+    if (!fileTabs.some((f) => f.id === id)) {
+      const title = commitTabTitle(shortHash, subject);
+      fileTabs = [...fileTabs, { id, worktreePath: wt, path: title, mode: "commit", cached: false, oid, title }];
     }
     activeFileId = id;
   }
@@ -574,8 +589,8 @@
               class:active={activeFileId === f.id}
               onclick={() => (activeFileId = f.id)}
             >
-              <span class="file-ico">{f.mode === "diff" ? "±" : "▤"}</span>
-              <span class="tab-title" title={f.path}>{f.path.split("/").pop()}</span>
+              <span class="file-ico">{f.mode === "commit" ? "●" : f.mode === "diff" ? "±" : "▤"}</span>
+              <span class="tab-title" title={f.path}>{f.mode === "commit" ? f.title : f.path.split("/").pop()}</span>
               <button class="tab-close-btn" onclick={(e) => closeFileTab(f.id, e)} title="Close">×</button>
             </div>
           {/each}
@@ -607,12 +622,20 @@
         {#if activeFile}
           <div class="file-overlay">
             {#key activeFile.id}
-              <FileViewer
-                worktreePath={activeFile.worktreePath}
-                path={activeFile.path}
-                mode={activeFile.mode}
-                cached={activeFile.cached}
-              />
+              {#if activeFile.mode === "commit" && activeFile.oid}
+                <CommitDiffViewer
+                  worktreePath={activeFile.worktreePath}
+                  oid={activeFile.oid}
+                  title={activeFile.title ?? activeFile.oid}
+                />
+              {:else if activeFile.mode !== "commit"}
+                <FileViewer
+                  worktreePath={activeFile.worktreePath}
+                  path={activeFile.path}
+                  mode={activeFile.mode}
+                  cached={activeFile.cached}
+                />
+              {/if}
             {/key}
           </div>
         {/if}
@@ -623,7 +646,11 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="resizer" onpointerdown={(e) => startResize("right", e)}></div>
       <aside class="panel right-panel" style:width="{rightWidth}px">
-        <InspectorPanel worktreePath={projectStore.selectedWorktreePath} onOpenFile={openFileTab} />
+        <InspectorPanel
+          worktreePath={projectStore.selectedWorktreePath}
+          onOpenFile={openFileTab}
+          onOpenCommit={openCommitTab}
+        />
       </aside>
     {/if}
   </div>
