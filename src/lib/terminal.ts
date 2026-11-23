@@ -89,7 +89,7 @@ export class TerminalSession {
       cursorStyle: "bar",
       fontSize: 13,
       fontFamily:
-        '"SF Mono", Monaco, "Courier New", monospace, "Apple Symbols", "Apple Color Emoji"',
+        '"SF Mono", Monaco, Menlo, "Courier New", "Apple Symbols", "Zapf Dingbats", "Segoe UI Symbol", "DejaVu Sans Mono", monospace',
       customGlyphs: true,
       theme: {
         background: "#11111b",
