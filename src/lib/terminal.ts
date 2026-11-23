@@ -2,6 +2,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { SerializeAddon } from "@xterm/addon-serialize";
+import { CanvasAddon } from "@xterm/addon-canvas";
 import {
   isSnapshotsEnabledLocal,
   snapshotLoad,
@@ -56,6 +57,9 @@ export class TerminalSession {
   private isDisposed = false;
   private onStatusChange?: (status: "running" | "stopped") => void;
   private fitTimer: ReturnType<typeof setTimeout> | null = null;
+  private webgl: CanvasAddon | null = null;
+  private repaintTimer: ReturnType<typeof setTimeout> | null = null;
+  private repaintUntil = 0;
   private serializeAddon = new SerializeAddon();
   // Capture scheduling lives in a pure controller. Its `dirty` flag is only set by live output,
   // never by restoring a snapshot, so an untouched restored tab is not re-saved with the old
@@ -85,7 +89,8 @@ export class TerminalSession {
       cursorStyle: "bar",
       fontSize: 13,
       fontFamily:
-        'Menlo, Monaco, "SF Mono", "Apple Symbols", "Apple Color Emoji", "Courier New", monospace',
+        '"SF Mono", Monaco, "Courier New", monospace, "Apple Symbols", "Apple Color Emoji"',
+      customGlyphs: true,
       theme: {
         background: "#11111b",
         foreground: "#cdd6f4",
@@ -118,6 +123,19 @@ export class TerminalSession {
     this.terminal.unicode.activeVersion = "11";
     this.terminal.loadAddon(this.serializeAddon);
 
+    // Shift+Enter inserts a newline (LF, like Ctrl+J) instead of submitting with CR
+    this.terminal.attachCustomKeyEventHandler((e) => {
+      if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (e.type === "keydown" && this.tab.status === "running" && !this.isDisposed) {
+          invoke("pty_write", { id: this.id, data: "\n" }).catch((err) => {
+            console.error(`Failed to write to PTY ${this.id}:`, err);
+          });
+        }
+        return false;
+      }
+      return true;
+    });
+
     // Forward user keystrokes to Rust PTY
     this.terminal.onData((data) => {
       if (this.tab.status === "running" && !this.isDisposed) {
@@ -139,12 +157,21 @@ export class TerminalSession {
 
   public async mount(container: HTMLElement) {
     this.terminal.open(container);
+    // Canvas renderer draws box-drawing/block glyphs itself (customGlyphs) so k9s lines join,
+    // without the WebGL glyph-atlas corruption seen on resize with Claude Code.
+    try {
+      const canvas = new CanvasAddon();
+      this.terminal.loadAddon(canvas);
+      this.webgl = canvas;
+    } catch (err) {
+      console.warn("Canvas renderer unavailable, using DOM renderer:", err);
+    }
     this.fit();
 
     // Listen to PTY output
     this.unlistenOutput = await listen<PtyOutputPayload>("pty-output", (event) => {
       if (event.payload.id === this.id && !this.isDisposed) {
-        this.terminal.write(event.payload.data);
+        this.terminal.write(event.payload.data, () => this.scheduleRepaintAfterResize());
         this.capture.markOutput();
       }
     });
@@ -257,18 +284,36 @@ export class TerminalSession {
     try {
       // Skip when the grid would not change: avoids redundant SIGWINCH/reflow.
       const dims = this.fitAddon.proposeDimensions();
-      if (
-        !dims ||
-        Number.isNaN(dims.cols) ||
-        Number.isNaN(dims.rows) ||
-        (dims.cols === this.terminal.cols && dims.rows === this.terminal.rows)
-      ) {
+      if (!dims || Number.isNaN(dims.cols) || Number.isNaN(dims.rows)) {
         return;
       }
-      this.fitAddon.fit();
+      if (dims.cols !== this.terminal.cols || dims.rows !== this.terminal.rows) {
+        this.fitAddon.fit();
+        // The TUI redraws asynchronously after SIGWINCH; repaint again once that output settles.
+        this.repaintUntil = Date.now() + 2000;
+      }
+      // Also on unchanged size: fit() runs when a tab becomes visible again, and the WebGL
+      // canvas/glyph atlas can be corrupt after being hidden (garbled text until selection).
+      this.repaint();
     } catch (err) {
       // Element might be hidden (display: none)
     }
+  }
+
+  /** Debounced repaint for output that arrives shortly after a resize (TUI redraw). */
+  private scheduleRepaintAfterResize() {
+    if (this.isDisposed || Date.now() > this.repaintUntil) return;
+    if (this.repaintTimer) clearTimeout(this.repaintTimer);
+    this.repaintTimer = setTimeout(() => {
+      this.repaintTimer = null;
+      if (!this.isDisposed) this.repaint();
+    }, 120);
+  }
+
+  /** Rebuilds the WebGL glyph atlas and repaints every row. */
+  private repaint() {
+    this.webgl?.clearTextureAtlas();
+    this.terminal.refresh(0, this.terminal.rows - 1);
   }
 
   /**
@@ -296,6 +341,10 @@ export class TerminalSession {
     if (this.fitTimer) {
       clearTimeout(this.fitTimer);
       this.fitTimer = null;
+    }
+    if (this.repaintTimer) {
+      clearTimeout(this.repaintTimer);
+      this.repaintTimer = null;
     }
     if (this.unlistenOutput) {
       this.unlistenOutput();
