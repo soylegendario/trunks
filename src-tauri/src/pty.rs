@@ -143,6 +143,8 @@ pub fn pty_create(
 
     thread::spawn(move || {
         let mut buf = [0u8; 4096];
+        // Bytes of a multibyte char split across two reads (e.g. '─' = E2 94 80).
+        let mut pending: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
@@ -150,7 +152,11 @@ pub fn pty_create(
                     break;
                 }
                 Ok(n) => {
-                    let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                    pending.extend_from_slice(&buf[..n]);
+                    let text = take_utf8_prefix(&mut pending);
+                    if text.is_empty() {
+                        continue;
+                    }
                     let payload = PtyOutputPayload {
                         id: session_id.clone(),
                         data: text,
@@ -178,6 +184,20 @@ pub fn pty_create(
     });
 
     Ok(())
+}
+
+/// Drains `pending`, returning the decodable text and keeping only a trailing incomplete
+/// UTF-8 sequence for the next read. Invalid bytes become U+FFFD.
+fn take_utf8_prefix(pending: &mut Vec<u8>) -> String {
+    let keep = match std::str::from_utf8(pending) {
+        Ok(_) => 0,
+        Err(e) if e.error_len().is_none() => pending.len() - e.valid_up_to(),
+        Err(_) => 0,
+    };
+    let split = pending.len() - keep;
+    let text = String::from_utf8_lossy(&pending[..split]).into_owned();
+    pending.drain(..split);
+    text
 }
 
 #[tauri::command]
@@ -252,6 +272,26 @@ pub fn pty_list(state: State<'_, PtyManager>) -> Result<Vec<String>, String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn utf8_char_split_across_reads_is_not_corrupted() {
+        let bytes = "a─b".as_bytes(); // '─' = E2 94 80
+        let mut pending: Vec<u8> = Vec::new();
+        let mut out = String::new();
+        for chunk in [&bytes[..2], &bytes[2..3], &bytes[3..]] {
+            pending.extend_from_slice(chunk);
+            out.push_str(&take_utf8_prefix(&mut pending));
+        }
+        assert_eq!(out, "a─b");
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn invalid_utf8_is_replaced_not_held_back() {
+        let mut pending = vec![b'a', 0xFF, b'b'];
+        assert_eq!(take_utf8_prefix(&mut pending), "a\u{FFFD}b");
+        assert!(pending.is_empty());
+    }
 
     #[test]
     fn test_system_info() {
