@@ -656,10 +656,26 @@ pub async fn git_cancel_commit_history(request_id: String) -> Result<(), String>
     Ok(())
 }
 
+/// Creates a `tokio::process::Command` for invoking Git.
+///
+/// On Windows, Git is a console subsystem executable (`IMAGE_SUBSYSTEM_WINDOWS_CUI`).
+/// Without `CREATE_NO_WINDOW`, spawning it from a GUI process causes a console window
+/// (`conhost.exe`) to briefly flash on screen, creating disruptive flickering during polling.
+fn git_command() -> tokio::process::Command {
+    #[cfg(windows)]
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    #[allow(unused_mut)]
+    let mut cmd = tokio::process::Command::new("git");
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
 /// Runs `git <args>` inside `cwd` without a shell and without blocking the UI thread.
 /// `op` names the operation in error messages. No timeout is imposed in M1.
 async fn run_git(cwd: &Path, args: &[&str], op: &str) -> Result<Vec<u8>, String> {
-    let output = tokio::process::Command::new("git")
+    let output = git_command()
         .args(args)
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -1111,7 +1127,7 @@ async fn commit_diff(
     .await
     .map_err(|_| format!("commit {oid} does not exist in this repository"))?;
 
-    let mut child = tokio::process::Command::new("git")
+    let mut child = git_command()
         .args([
             "--no-optional-locks",
             "show",
@@ -1166,6 +1182,12 @@ pub async fn git_get_commit_diff(worktree_path: String, oid: String) -> Result<G
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_command_constructs_valid_command() {
+        let _ = git_command();
+        let _ = sync_git_command();
+    }
 
     #[test]
     fn parses_worktree_porcelain_records() {
@@ -1430,8 +1452,22 @@ locked
 
     // ---- Integration tests: they drive the real `git` binary against temp repositories. ----
 
+    fn sync_git_command() -> std::process::Command {
+        #[cfg(windows)]
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        #[allow(unused_mut)]
+        let mut cmd = std::process::Command::new("git");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        cmd
+    }
+
     fn git_sync(dir: &Path, args: &[&str]) {
-        let out = std::process::Command::new("git")
+        let out = sync_git_command()
             .args(["-c", "user.name=Trunks Test", "-c", "user.email=test@trunks.local"])
             .args(["-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"])
             .args(args)
@@ -1939,7 +1975,7 @@ locked
     // ---- Commit diff against the first parent ----
 
     fn head_oid_sync(repo: &Path) -> String {
-        let out = std::process::Command::new("git")
+        let out = sync_git_command()
             .args(["rev-parse", "HEAD"])
             .current_dir(repo)
             .output()
