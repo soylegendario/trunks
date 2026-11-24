@@ -11,6 +11,9 @@ import {
   restoreSelection,
   findTabForWorktree,
   tabsForWorktree,
+  terminalDotState,
+  aggregateTerminalState,
+  pruneCollapsedWorktrees,
   type ProjectState,
 } from "../src/lib/project-logic.ts";
 import type { GitWorktreeInfo } from "../src/lib/git.ts";
@@ -183,5 +186,49 @@ describe("tabIdsForRemovedPaths", () => {
   });
   it("returns nothing when no tab matches", () => {
     assert.deepEqual(tabIdsForRemovedPaths(tabs, ["/nope"]), []);
+  });
+});
+
+describe("terminalDotState", () => {
+  it("maps a running tab to running", () => {
+    assert.equal(terminalDotState({ status: "running" }), "running");
+  });
+  it("maps a stopped restored tab to restored", () => {
+    assert.equal(terminalDotState({ status: "stopped", isRestored: true }), "restored");
+  });
+  it("maps a plain stopped tab to stopped", () => {
+    assert.equal(terminalDotState({ status: "stopped" }), "stopped");
+  });
+  it("keeps running when a running tab is still flagged as restored", () => {
+    assert.equal(terminalDotState({ status: "running", isRestored: true }), "running");
+  });
+});
+
+describe("aggregateTerminalState", () => {
+  it("has no state and zero count without tabs", () => {
+    assert.deepEqual(aggregateTerminalState([]), { state: null, count: 0 });
+  });
+  it("is running when any tab runs, even with restored ones", () => {
+    const r = aggregateTerminalState([
+      { status: "stopped", isRestored: true },
+      { status: "running" },
+    ]);
+    assert.deepEqual(r, { state: "running", count: 2 });
+  });
+  it("is restored when none runs but one is restored", () => {
+    const r = aggregateTerminalState([{ status: "stopped" }, { status: "stopped", isRestored: true }]);
+    assert.deepEqual(r, { state: "restored", count: 2 });
+  });
+  it("has no state when only plain stopped tabs exist", () => {
+    assert.deepEqual(aggregateTerminalState([{ status: "stopped" }]), { state: null, count: 1 });
+  });
+});
+
+describe("pruneCollapsedWorktrees", () => {
+  it("drops paths that are no longer live, keeping order", () => {
+    assert.deepEqual(pruneCollapsedWorktrees(["/a", "/gone", "/b"], ["/b", "/a"]), ["/a", "/b"]);
+  });
+  it("drops everything when no path is live", () => {
+    assert.deepEqual(pruneCollapsedWorktrees(["/a", "/b"], []), []);
   });
 });
