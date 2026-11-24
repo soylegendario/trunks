@@ -217,7 +217,9 @@
             >
               <span class="chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
               <span class="project-name">{project.name}</span>
-              <span class="worktree-count" title="Worktrees">{project.worktrees.length}</span>
+              {#if project.worktrees.length > 1}
+                <span class="worktree-count" title="Worktrees">{project.worktrees.length}</span>
+              {/if}
               {#if project.is_stale}
                 <span class="stale-badge" title={project.stale_reason || "Directory not found"}>
                   ⚠️ Stale
