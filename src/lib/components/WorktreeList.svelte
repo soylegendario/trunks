@@ -866,8 +866,10 @@
     min-width: 0;
     padding: 3px 8px;
     background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
+    border: none;
+    /* Reserved so the active marker does not shift the row. */
+    border-left: 2px solid transparent;
+    border-radius: 0 4px 4px 0;
     color: #a6adc8;
     font: inherit;
     font-size: 11px;
@@ -881,8 +883,7 @@
   }
 
   .terminal-row.active {
-    border-color: #9448f8;
-    background: rgba(148, 72, 248, 0.12);
+    border-left-color: #9448f8;
     color: #cdd6f4;
   }
 
