@@ -4,6 +4,12 @@
     type ProjectState,
   } from "$lib/projects.svelte";
   import type { GitWorktreeInfo } from "$lib/git";
+  import type { TerminalTab } from "$lib/terminal";
+  import {
+    aggregateTerminalState,
+    pruneCollapsedWorktrees,
+    terminalDotState,
+  } from "$lib/project-logic";
   import AddProjectModal from "./AddProjectModal.svelte";
   import CreateWorktreeModal from "./CreateWorktreeModal.svelte";
   import RemoveWorktreeModal from "./RemoveWorktreeModal.svelte";
@@ -13,8 +19,9 @@
   let {
     onOpenTerminal,
     onSelectWorktree,
-    runningTerminals = () => 0,
-    restoredTerminals = () => 0,
+    terminalsFor = () => [],
+    activeTerminalId = "",
+    onSelectTerminal,
     onWorktreeRemoved,
     onProjectRemoved,
   }: {
@@ -25,10 +32,12 @@
       projectName: string
     ) => void;
     onSelectWorktree?: (projectId: string, worktreePath: string) => void;
-    /** Number of live terminals bound to a worktree path. */
-    runningTerminals?: (worktreePath: string) => number;
-    /** Number of restored (not yet started) terminals bound to a worktree path. */
-    restoredTerminals?: (worktreePath: string) => number;
+    /** Terminals bound to a worktree path, in tab order. */
+    terminalsFor?: (worktreePath: string) => TerminalTab[];
+    /** Id of the terminal tab currently shown in the center area ("" if none). */
+    activeTerminalId?: string;
+    /** A terminal row was clicked: select its project/worktree and activate the tab. */
+    onSelectTerminal?: (projectId: string, worktreePath: string, tabId: string) => void;
     /** A worktree was removed: its terminal snapshots must be deleted. */
     onWorktreeRemoved?: (worktreePath: string) => void;
     /** A project was removed: snapshots of terminals bound to any of these paths must be deleted. */
@@ -67,6 +76,38 @@
       const live = new Set(projectStore.projects.map((p) => p.id));
       const ids = Object.keys(collapsed).filter((id) => collapsed[id] && live.has(id));
       localStorage.setItem(COLLAPSED_KEY, JSON.stringify(ids));
+    } catch {
+      // preference only: ignore storage failures
+    }
+  }
+
+  // Collapsed worktrees (terminal list hidden), keyed by worktree path. Same UI-preference
+  // treatment as collapsed projects: localStorage only, failures ignored, dead paths pruned.
+  const COLLAPSED_WT_KEY = "trunks.sidebar.collapsedWorktrees";
+
+  function loadCollapsedWorktrees(): Record<string, boolean> {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(COLLAPSED_WT_KEY) ?? "[]");
+      const paths: string[] = Array.isArray(parsed)
+        ? parsed.filter((i) => typeof i === "string")
+        : [];
+      return Object.fromEntries(paths.map((p) => [p, true]));
+    } catch {
+      return {};
+    }
+  }
+
+  let collapsedWorktrees = $state<Record<string, boolean>>(loadCollapsedWorktrees());
+
+  function setWorktreeCollapsed(path: string, value: boolean) {
+    collapsedWorktrees[path] = value;
+    try {
+      const live = projectStore.projects.flatMap((p) => p.worktrees.map((w) => w.path));
+      const kept = pruneCollapsedWorktrees(
+        Object.keys(collapsedWorktrees).filter((k) => collapsedWorktrees[k]),
+        live
+      );
+      localStorage.setItem(COLLAPSED_WT_KEY, JSON.stringify(kept));
     } catch {
       // preference only: ignore storage failures
     }
@@ -160,7 +201,12 @@
     {:else}
       {#each projectStore.projects as project (project.id)}
         {@const isCollapsed = Boolean(collapsed[project.id])}
-        <div class="project-card" class:stale={project.is_stale} class:collapsed={isCollapsed}>
+        <div
+          class="project-card"
+          class:stale={project.is_stale}
+          class:collapsed={isCollapsed}
+          class:active={projectStore.selectedProjectId === project.id}
+        >
           <div class="project-header">
             <button
               type="button"
@@ -216,6 +262,9 @@
                 {@const isMain = idx === 0}
                 {@const isSelected = projectStore.selectedWorktreePath === wt.path}
                 {@const wtName = wt.branch || wt.path.split(/[\\/]/).pop() || "worktree"}
+                {@const terminals = terminalsFor(wt.path)}
+                {@const wtCollapsed = Boolean(collapsedWorktrees[wt.path])}
+                {@const summary = aggregateTerminalState(terminals)}
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div
@@ -227,17 +276,33 @@
                 >
                   <div class="worktree-main-row">
                     <div class="worktree-branch-box">
+                      {#if terminals.length > 0}
+                        <button
+                          type="button"
+                          class="wt-chevron"
+                          aria-expanded={!wtCollapsed}
+                          aria-label={wtCollapsed ? "Show terminals" : "Hide terminals"}
+                          title={wtCollapsed ? "Show terminals" : "Hide terminals"}
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            setWorktreeCollapsed(wt.path, !wtCollapsed);
+                          }}
+                        >
+                          {wtCollapsed ? "▸" : "▾"}
+                        </button>
+                      {/if}
                       <span class="branch-icon">⎇</span>
-                      {#if runningTerminals(wt.path) > 0}
+                      {#if wtCollapsed && summary.state}
                         <span
                           class="term-dot"
-                          title={`${runningTerminals(wt.path)} terminal(s) running`}
+                          class:restored={summary.state === "restored"}
+                          title={summary.state === "running"
+                            ? `${summary.count} terminal(s), at least one running`
+                            : `${summary.count} terminal(s), restored and not running`}
                         ></span>
-                      {:else if restoredTerminals(wt.path) > 0}
-                        <span
-                          class="term-dot restored"
-                          title={`${restoredTerminals(wt.path)} terminal(s) restored, not running`}
-                        ></span>
+                      {/if}
+                      {#if wtCollapsed && summary.count > 1}
+                        <span class="term-count" title="Terminals">{summary.count}</span>
                       {/if}
                       <span class="branch-name" title={wt.branch || "detached"}>
                         {wt.branch || (wt.head ? `detached (${wt.head.substring(0, 7)})` : "detached")}
@@ -298,6 +363,28 @@
                     </div>
                   {/if}
                 </div>
+                {#if !wtCollapsed && terminals.length > 0}
+                  <div class="terminal-list">
+                    {#each terminals as tab (tab.id)}
+                      {@const dot = terminalDotState(tab)}
+                      <button
+                        type="button"
+                        class="terminal-row"
+                        class:active={tab.id === activeTerminalId}
+                        title={`${tab.title}\n${dot}`}
+                        aria-label={`${tab.title} (${dot})`}
+                        onclick={() => onSelectTerminal?.(project.id, wt.path, tab.id)}
+                      >
+                        <span
+                          class="term-dot"
+                          class:restored={dot === "restored"}
+                          class:stopped={dot === "stopped"}
+                        ></span>
+                        <span class="terminal-title">{tab.title}</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
               {/each}
             {/if}
           </div>
@@ -488,6 +575,10 @@
 
   .project-card.collapsed .project-header {
     border-bottom: none;
+  }
+
+  .project-card.active {
+    border-color: #9448f8;
   }
 
   .project-card.stale {
@@ -730,6 +821,75 @@
   .term-dot.restored {
     background: #f0883e;
     box-shadow: 0 0 5px rgba(240, 136, 62, 0.7);
+  }
+
+  .term-dot.stopped {
+    background: #585b70;
+    box-shadow: none;
+  }
+
+  .wt-chevron {
+    flex-shrink: 0;
+    width: 12px;
+    padding: 0;
+    background: none;
+    border: none;
+    color: #a6adc8;
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .wt-chevron:hover {
+    color: #9448f8;
+  }
+
+  .term-count {
+    flex-shrink: 0;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background: #313244;
+    color: #a6adc8;
+  }
+
+  .terminal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0 0 2px 18px;
+  }
+
+  .terminal-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 3px 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #a6adc8;
+    font: inherit;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .terminal-row:hover {
+    background: #141420;
+    color: #cdd6f4;
+  }
+
+  .terminal-row.active {
+    border-color: #9448f8;
+    background: rgba(148, 72, 248, 0.12);
+    color: #cdd6f4;
+  }
+
+  .terminal-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .wt-btn {

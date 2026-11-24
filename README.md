@@ -179,6 +179,17 @@ This project is developed asynchronously and collaboratively across human develo
  
 ---
  
+## Changelog
+ 
+Trunks has no versioned releases yet, so entries are grouped by date (newest first).
+ 
+### 2026-11-24
+ 
+- **Terminals nested under each worktree in the sidebar.** Each worktree now lists its terminals beneath it (Project → Worktree → Terminals), so you can identify and switch between them without using the tab bar. Terminal lists are collapsible per worktree (remembered between sessions), each terminal has its own status dot (running, restored, stopped), and a collapsed worktree shows an aggregate dot with a terminal count. Clicking a terminal selects its worktree and tab.
+- **Active project highlighted.** The card of the active project is outlined in the theme colour, like the selected worktree.
+ 
+---
+ 
 ## License
  
 Trunks is licensed under the GNU General Public License v3.0 only (`GPL-3.0-only`). You may use, study, modify, and distribute the software under its terms. If you distribute a modified version, follow the GPL's applicable source-code and other distribution requirements. Commercial use and distribution are allowed under the GPL. Private modifications that are not distributed generally do not require publishing their source code. See the full [GNU GPL v3 license](LICENSE).

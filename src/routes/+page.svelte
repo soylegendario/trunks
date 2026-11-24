@@ -275,6 +275,13 @@
     await createTab(cwd, title, worktreeName, projectName);
   }
 
+  /** Sidebar terminal row: selects its project and worktree, then activates the tab. */
+  function selectTerminalFromSidebar(projectId: string, worktreePath: string, tabId: string) {
+    projectStore.selectedProjectId = projectId;
+    projectStore.selectedWorktreePath = worktreePath;
+    selectTab(tabId);
+  }
+
   async function closeTab(id: string, event?: Event) {
     if (event) event.stopPropagation();
     const session = sessions.get(id);
@@ -538,12 +545,9 @@
       <aside class="panel left-panel" style:width="{leftWidth}px">
         <WorktreeList
           onOpenTerminal={openOrFocusWorktreeTab}
-          runningTerminals={(path) =>
-            tabsForWorktree(tabs, path).filter((t) => t.status === "running").length}
-          restoredTerminals={(path) =>
-            tabsForWorktree(tabs, path).filter(
-              (t) => t.isRestored && t.status === "stopped"
-            ).length}
+          terminalsFor={(path) => tabsForWorktree(tabs, path)}
+          activeTerminalId={activeFile ? "" : activeTabId}
+          onSelectTerminal={selectTerminalFromSidebar}
           onSelectWorktree={() => persistLayoutState()}
           onWorktreeRemoved={(path) => purgeSnapshotsForPaths([path])}
           onProjectRemoved={(paths) => purgeSnapshotsForPaths(paths)}

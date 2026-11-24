@@ -113,3 +113,29 @@ export function tabIdsForRemovedPaths<T extends { id: string; cwd: string }>(
   }
   return [...ids];
 }
+
+export type TerminalDotState = "running" | "restored" | "stopped";
+
+type TabLike = { status: string; isRestored?: boolean };
+
+/** Status dot of one terminal: live, restored-but-not-started, or plain stopped. */
+export function terminalDotState(tab: TabLike): TerminalDotState {
+  if (tab.status === "running") return "running";
+  return tab.isRestored ? "restored" : "stopped";
+}
+
+/** Summary of a worktree's terminals for a collapsed row: running beats restored; stopped shows nothing. */
+export function aggregateTerminalState(tabs: TabLike[]): {
+  state: "running" | "restored" | null;
+  count: number;
+} {
+  const states = tabs.map(terminalDotState);
+  const state = states.includes("running") ? "running" : states.includes("restored") ? "restored" : null;
+  return { state, count: tabs.length };
+}
+
+/** Keeps only collapsed worktree paths that still exist, preserving order. */
+export function pruneCollapsedWorktrees(collapsed: string[], livePaths: string[]): string[] {
+  const live = new Set(livePaths);
+  return collapsed.filter((p) => live.has(p));
+}
