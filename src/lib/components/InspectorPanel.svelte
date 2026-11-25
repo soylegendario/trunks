@@ -106,7 +106,7 @@
     font-size: 12px;
     cursor: pointer;
   }
-  .tabs button.active { color: #c9d1d9; border-bottom-color: #9448f8; }
+  .tabs button.active { color: #c9d1d9; border-bottom-color: var(--accent-primary, #9448f8); }
   .body { flex: 1; min-height: 0; overflow: hidden; }
   .tree { height: 100%; overflow: auto; padding: 4px 0; }
   .hint { padding: 10px; font-size: 12px; color: #8b949e; }

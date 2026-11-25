@@ -248,13 +248,13 @@
   .detail-row .val.path {
     font-family: monospace;
     font-size: 11px;
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
     word-break: break-all;
   }
 
   .warning-banner {
-    background: rgba(148, 72, 248, 0.1);
-    border: 1px solid #9448f8;
+    background: var(--accent-muted, rgba(148, 72, 248, 0.1));
+    border: 1px solid var(--accent-primary, #9448f8);
     border-radius: 6px;
     padding: 12px;
     display: flex;

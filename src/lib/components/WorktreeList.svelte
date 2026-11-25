@@ -481,7 +481,7 @@
 
   .icon-btn:hover {
     background: #45475a;
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
   }
 
   .icon-btn.spinning {
@@ -498,7 +498,7 @@
   }
 
   .action-btn-sm {
-    background: #9448f8;
+    background: var(--accent-primary, #9448f8);
     color: #ffffff;
     border: none;
     padding: 4px 8px;
@@ -510,7 +510,7 @@
   }
 
   .action-btn-sm:hover {
-    background: #aa6dfb;
+    background: var(--accent-hover, #aa6dfb);
   }
 
   .sidebar-content {
@@ -550,7 +550,7 @@
     margin-top: 8px;
     background: #313244;
     border: 1px solid #45475a;
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
     padding: 6px 12px;
     border-radius: 5px;
     font-size: 12px;
@@ -561,7 +561,7 @@
 
   .add-repo-btn:hover {
     background: #45475a;
-    border-color: #9448f8;
+    border-color: var(--accent-primary, #9448f8);
   }
 
   .project-card {
@@ -580,7 +580,7 @@
   }
 
   .project-card.active {
-    border-color: #9448f8;
+    border-color: var(--accent-primary, #9448f8);
   }
 
   .project-card.stale {
@@ -613,7 +613,7 @@
   }
 
   .project-info:hover .project-name {
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
   }
 
   .chevron {
@@ -670,7 +670,7 @@
 
   .icon-btn-sm:hover {
     background: #313244;
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
   }
 
   .icon-btn-sm.danger:hover {
@@ -715,8 +715,8 @@
   }
 
   .worktree-item.selected {
-    border-color: #9448f8;
-    background: rgba(148, 72, 248, 0.12);
+    border-color: var(--accent-primary, #9448f8);
+    background: var(--accent-muted, rgba(148, 72, 248, 0.12));
   }
 
   .worktree-item.stale {
@@ -740,7 +740,7 @@
   }
 
   .branch-icon {
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
     font-size: 12px;
   }
 
@@ -842,7 +842,7 @@
   }
 
   .wt-chevron:hover {
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
   }
 
   .term-count {
@@ -885,7 +885,7 @@
   }
 
   .terminal-row.active {
-    border-left-color: #9448f8;
+    border-left-color: var(--accent-primary, #9448f8);
     color: #cdd6f4;
   }
 
@@ -906,14 +906,14 @@
 
   .wt-btn.terminal-btn {
     background: #313244;
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
     padding: 3px 6px;
     font-family: monospace;
     font-weight: 700;
   }
 
   .wt-btn.terminal-btn:hover {
-    background: #9448f8;
+    background: var(--accent-primary, #9448f8);
     color: #ffffff;
   }
 

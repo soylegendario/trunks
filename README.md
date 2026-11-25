@@ -180,9 +180,13 @@ This project is developed asynchronously and collaboratively across human develo
 ---
  
 ## Changelog
- 
+
 Trunks has no versioned releases yet, so entries are grouped by date (newest first).
- 
+
+### 2026-11-25
+
+- **Dragon Ball color themes.** Added optional accent color themes inspired by Dragon Ball characters: Trunks (purple, default), Goku (red), Vegeta (blue), Bulma (light blue), and Piccolo (green). Themes can be selected from an Appearance dropdown in Settings (`SettingsModal`), persist in `localStorage` (`trunks.theme`), apply instantly on startup with zero flash of unstyled color (FOUC), and dynamically update UI accent elements and live xterm.js terminal sessions in real time.
+
 ### 2026-11-24
  
 - **Terminals nested under each worktree in the sidebar.** Each worktree now lists its terminals beneath it (Project → Worktree → Terminals), so you can identify and switch between them without using the tab bar. Terminal lists are collapsible per worktree (remembered between sessions), each terminal has its own status dot (running, restored, stopped), and a collapsed worktree shows an aggregate dot with a terminal count. Clicking a terminal selects its worktree and tab.

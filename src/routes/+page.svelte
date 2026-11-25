@@ -18,12 +18,17 @@
     snapshotDeleteMany,
     snapshotReconcile,
   } from "$lib/snapshots";
+  import { themeStore } from "$lib/theme.svelte";
   import TerminalView from "$lib/TerminalView.svelte";
   import WorktreeList from "$lib/components/WorktreeList.svelte";
   import InspectorPanel from "$lib/components/InspectorPanel.svelte";
   import FileViewer from "$lib/components/FileViewer.svelte";
   import CommitDiffViewer from "$lib/components/CommitDiffViewer.svelte";
   import { commitTabId, commitTabTitle, fileTabId } from "$lib/center-tab-logic";
+
+  if (typeof window !== "undefined") {
+    themeStore.init();
+  }
 
   type FileTab = {
     id: string;
@@ -370,6 +375,7 @@
   }
 
   onMount(() => {
+    themeStore.init();
     window.addEventListener("focus", handleWindowFocus);
 
     // Flush snapshots before the window closes. The handler resolving lets Tauri close the window.
@@ -798,7 +804,7 @@
 
   .resizer:hover,
   :global(body.resizing) .resizer {
-    background: rgba(148, 72, 248, 0.4);
+    background: var(--accent-subtle, rgba(148, 72, 248, 0.4));
   }
 
   :global(body.resizing) {
@@ -877,8 +883,8 @@
 
   .tab.active {
     background-color: #11111b;
-    color: #9448f8;
-    border-top: 2px solid #9448f8;
+    color: var(--accent-primary, #9448f8);
+    border-top: 2px solid var(--accent-primary, #9448f8);
     font-weight: 500;
   }
 
@@ -936,7 +942,7 @@
   }
 
   .tab-start-btn, .tab-restart-btn {
-    background: #9448f8;
+    background: var(--accent-primary, #9448f8);
     color: #ffffff;
     border: none;
     padding: 1px 5px;
@@ -952,7 +958,7 @@
   }
 
   .tab-start-btn:hover {
-    background: #aa6dfb;
+    background: var(--accent-hover, #aa6dfb);
   }
 
   .tab-restart-btn:hover {
@@ -994,7 +1000,7 @@
 
   .new-tab-btn:hover {
     background-color: #181825;
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
   }
 
   .panel-content {
@@ -1016,7 +1022,7 @@
 
   .file-ico {
     font-size: 11px;
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
   }
 
   .empty-state {
@@ -1042,19 +1048,19 @@
   }
 
   .action-btn.primary {
-    background: #9448f8;
+    background: var(--accent-primary, #9448f8);
     color: #ffffff;
-    border-color: #9448f8;
+    border-color: var(--accent-primary, #9448f8);
     font-weight: 600;
   }
 
   .action-btn:hover {
     background: #45475a;
-    color: #9448f8;
+    color: var(--accent-primary, #9448f8);
   }
 
   .action-btn.primary:hover {
-    background: #aa6dfb;
-    border-color: #aa6dfb;
+    background: var(--accent-hover, #aa6dfb);
+    border-color: var(--accent-hover, #aa6dfb);
   }
 </style>
