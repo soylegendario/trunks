@@ -5,6 +5,39 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tauri + SvelteKit + Typescript App</title>
+    <style>
+      :root {
+        --accent-primary: #9448f8;
+        --accent-hover: #aa6dfb;
+        --accent-muted: rgba(148, 72, 248, 0.15);
+        --accent-border: rgba(148, 72, 248, 0.3);
+        --accent-subtle: rgba(148, 72, 248, 0.4);
+        --accent-dot: #9161D4;
+      }
+    </style>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("trunks.theme");
+          var themes = {
+            trunks: { p: "#9448f8", h: "#aa6dfb", m: "rgba(148, 72, 248, 0.15)", b: "rgba(148, 72, 248, 0.3)", s: "rgba(148, 72, 248, 0.4)", d: "#9161D4" },
+            goku: { p: "#e44e4b", h: "#ef6e6c", m: "rgba(228, 78, 75, 0.15)", b: "rgba(228, 78, 75, 0.3)", s: "rgba(228, 78, 75, 0.4)", d: "#E44E4B" },
+            vegeta: { p: "#3d59be", h: "#5573d8", m: "rgba(61, 89, 190, 0.15)", b: "rgba(61, 89, 190, 0.3)", s: "rgba(61, 89, 190, 0.4)", d: "#3D59BE" },
+            bulma: { p: "#45b4d6", h: "#66c8e5", m: "rgba(69, 180, 214, 0.15)", b: "rgba(69, 180, 214, 0.3)", s: "rgba(69, 180, 214, 0.4)", d: "#45B4D6" },
+            piccolo: { p: "#57a461", h: "#72ba7b", m: "rgba(87, 164, 97, 0.15)", b: "rgba(87, 164, 97, 0.3)", s: "rgba(87, 164, 97, 0.4)", d: "#57A461" }
+          };
+          var cur = themes[t] || themes.trunks;
+          var root = document.documentElement;
+          root.style.setProperty("--accent-primary", cur.p);
+          root.style.setProperty("--accent-hover", cur.h);
+          root.style.setProperty("--accent-muted", cur.m);
+          root.style.setProperty("--accent-border", cur.b);
+          root.style.setProperty("--accent-subtle", cur.s);
+          root.style.setProperty("--accent-dot", cur.d);
+          root.setAttribute("data-theme", themes[t] ? t : "trunks");
+        } catch (e) {}
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

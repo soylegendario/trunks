@@ -24,6 +24,8 @@ When starting a new session, **every agent MUST perform the following steps in o
 
 To allow the next agent to resume without loss of context or ambiguity, **documenting all progress is mandatory before concluding a session**:
 
+- **Documentation location:** All plans, specs, and project/task documentation (including progress, technical decisions, and milestone results) must be stored under `docs/superpowers/` so every agent can find the context of completed and upcoming work. Use suitable subdirectories such as `plans/` and `specs/`, and do not create new project documents elsewhere.
+
 1. **Update the Active Plan**:
    - Mark completed tasks and subtasks as done (`- [x]`) in `docs/superpowers/plans/<active-plan>.md`.
    - If a task is partially completed or blocked, add a concise note beneath the subtask stating the reason and recommended next step.
@@ -32,7 +34,10 @@ To allow the next agent to resume without loss of context or ambiguity, **docume
 3. **Record Technical Evidence and Decisions**:
    - When milestone acceptance criteria are fulfilled, document results in `docs/milestones/<milestone>-results.md` (e.g., `docs/milestones/m0-results.md`, `docs/milestones/m1-results.md`).
    - If a stack component is proposed or ruled out, update `docs/adr/0001-stack.md`.
-4. **Verification and Clean State**:
+4. **Update README Changelog**:
+   - Whenever a new feature or user-facing capability is incorporated, add an entry to the `Changelog` section in `README.md` under the current date (grouped newest first).
+   - If not sure whether a change warrants a changelog entry or how to frame it, consult with the user.
+5. **Verification and Clean State**:
    - Ensure the codebase builds cleanly before wrapping up:
      - Frontend: `npm run check && npm run build`
      - Backend: `cargo check --manifest-path src-tauri/Cargo.toml` (or `cargo build`)
@@ -75,6 +80,7 @@ Every agent must respect the principles defined in [`docs/intent.md`](docs/inten
   - [x] **M2 Completed:** Commit history tab (grouping, base selection, pagination, cancellation), first-parent commit diff tabs, per-worktree inspector tab, and macOS snapshot spike (`docs/milestones/m2-snapshot-spike-results.md`). `npm run check`, `build`, `test:unit` (26), and `cargo test` (73) pass; manual pass reported OK by user. Results in `docs/milestones/m2-results.md`.
   - [x] **Markdown preview in FileViewer:** `.md`/`.markdown`/`.mdx` files show a Código | Vista previa toggle (default preview; `marked` + `DOMPurify`, logic in `src/lib/markdown-logic.ts`). `check`, `build`, `test:unit` (70) pass.
   - [x] **Sidebar terminals under worktrees (issue #17):** each worktree lists its terminals nested beneath it (collapsible, state in `localStorage`), one status dot per terminal, aggregate dot + count when collapsed; click selects worktree + tab. Helpers in `project-logic.ts` (`terminalDotState`, `aggregateTerminalState`, `pruneCollapsedWorktrees`). `check`, `build`, `test:unit` (78) pass; manual UI pass pending. Spec/plan: `docs/superpowers/specs|plans/2026-11-24-sidebar-terminals-under-worktree*`.
+  - [x] **Dragon Ball color themes:** Optional accent themes Trunks (`#9161D4`), Goku (`#E44E4B`), Vegeta (`#3D59BE`), Bulma (`#45B4D6`), and Piccolo (`#57A461`). Selector dropdown in `SettingsModal.svelte` with appearance header and color dots, CSS custom properties (`--accent-*`), `localStorage` (`trunks.theme`) persistence, zero-FOUC preload script, and live xterm.js terminal session palette synchronization. `check`, `build`, `test:unit` (95), and `cargo test` (105) pass.
 - **Next Objective:** Open the M3 merge request into `main` and merge. Known follow-ups: Cmd+Q flush handshake only if data loss is ever observed, cheaper eviction. Windows/Linux validation remains deferred until external testers are available.
 
 ---

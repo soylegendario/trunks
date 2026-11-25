@@ -39,6 +39,6 @@
   }
   .add { background: rgba(63, 185, 80, 0.15); color: #7ee787; }
   .del { background: rgba(248, 81, 73, 0.15); color: #ffa198; }
-  .hunk { background: rgba(148, 72, 248, 0.15); color: #9448f8; }
+  .hunk { background: var(--accent-muted, rgba(148, 72, 248, 0.15)); color: var(--accent-primary, #9448f8); }
   .meta { color: #8b949e; }
 </style>

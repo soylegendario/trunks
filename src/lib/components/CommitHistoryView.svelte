@@ -214,7 +214,7 @@
   .group { padding: 4px 10px; background: #161b22; color: #8b949e; border-top: 1px solid #30363d; border-bottom: 1px solid #30363d; position: sticky; top: 0; }
   .row { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; padding: 3px 10px; width: 100%; background: none; border: 0; font: inherit; text-align: left; cursor: pointer; color: inherit; }
   .row:hover, .row:focus-visible { background: #161b22; outline: none; }
-  .hash { font-family: monospace; color: #9448f8; }
+  .hash { font-family: monospace; color: var(--accent-primary, #9448f8); }
   .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c9d1d9; }
   .meta { grid-column: 2; color: #6e7681; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .more { margin: 8px 10px; background: none; border: 1px solid #30363d; color: #c9d1d9; cursor: pointer; padding: 4px 8px; }

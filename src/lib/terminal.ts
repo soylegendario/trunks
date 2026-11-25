@@ -14,6 +14,8 @@ import {
   restoreSnapshotGuarded,
   shouldRestoreSnapshot,
 } from "./snapshot-logic";
+import { themeStore } from "./theme.svelte";
+import { getThemeTerminalColors, type ThemeColors, type ThemeId } from "./theme-logic";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
@@ -68,6 +70,7 @@ export class TerminalSession {
   private restorePromise: Promise<void> | null = null;
   private restoredAltScreen = false;
   private showedSnapshot = false;
+  private unsubscribeTheme: (() => void) | null = null;
 
   constructor(
     tab: TerminalTab,
@@ -84,6 +87,8 @@ export class TerminalSession {
     });
     this.onStatusChange = onStatusChange;
 
+    const termColors = getThemeTerminalColors(themeStore.currentThemeId);
+
     this.terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
@@ -94,14 +99,14 @@ export class TerminalSession {
       theme: {
         background: "#11111b",
         foreground: "#cdd6f4",
-        cursor: "#9448f8",
-        selectionBackground: "#3a1d5e",
+        cursor: termColors.cursor,
+        selectionBackground: termColors.selectionBackground,
         black: "#11111b",
         red: "#f38ba8",
         green: "#a6e3a1",
         yellow: "#f9e2af",
         blue: "#89b4fa",
-        magenta: "#9448f8",
+        magenta: termColors.magenta,
         cyan: "#94e2d5",
         white: "#bac2de",
         brightBlack: "#585b70",
@@ -109,11 +114,15 @@ export class TerminalSession {
         brightGreen: "#a6e3a1",
         brightYellow: "#f9e2af",
         brightBlue: "#89b4fa",
-        brightMagenta: "#aa6dfb",
+        brightMagenta: termColors.brightMagenta,
         brightCyan: "#94e2d5",
         brightWhite: "#a6adc8",
       },
       allowProposedApi: true,
+    });
+
+    this.unsubscribeTheme = themeStore.subscribeThemeChanges((theme) => {
+      this.updateTheme(theme);
     });
 
     this.fitAddon = new FitAddon();
@@ -329,6 +338,21 @@ export class TerminalSession {
     }, delay);
   }
 
+  public updateTheme(themeOrColors?: ThemeColors | string) {
+    if (this.isDisposed) return;
+    const colors = themeOrColors
+      ? getThemeTerminalColors(themeOrColors)
+      : getThemeTerminalColors(themeStore.currentThemeId);
+    this.terminal.options.theme = {
+      ...this.terminal.options.theme,
+      cursor: colors.cursor,
+      selectionBackground: colors.selectionBackground,
+      magenta: colors.magenta,
+      brightMagenta: colors.brightMagenta,
+    };
+    this.repaint();
+  }
+
   public async restart() {
     this.terminal.clear();
     await this.startPty();
@@ -336,6 +360,10 @@ export class TerminalSession {
 
   public async destroy() {
     this.isDisposed = true;
+    if (this.unsubscribeTheme) {
+      this.unsubscribeTheme();
+      this.unsubscribeTheme = null;
+    }
     // Wait for an in-flight save so the caller's snapshot delete cannot be overtaken by it.
     await this.capture.dispose();
     if (this.fitTimer) {
