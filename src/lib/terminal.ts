@@ -71,10 +71,12 @@ export class TerminalSession {
   private restoredAltScreen = false;
   private showedSnapshot = false;
   private unsubscribeTheme: (() => void) | null = null;
+  private onTitleChange?: (title: string) => void;
 
   constructor(
     tab: TerminalTab,
-    onStatusChange?: (status: "running" | "stopped") => void
+    onStatusChange?: (status: "running" | "stopped") => void,
+    onTitleChange?: (title: string) => void
   ) {
     this.id = tab.id;
     this.tab = tab;
@@ -86,6 +88,7 @@ export class TerminalSession {
       cancel: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     });
     this.onStatusChange = onStatusChange;
+    this.onTitleChange = onTitleChange;
 
     const termColors = getThemeTerminalColors(themeStore.currentThemeId);
 
@@ -119,6 +122,13 @@ export class TerminalSession {
         brightWhite: "#a6adc8",
       },
       allowProposedApi: true,
+    });
+
+    this.terminal.onTitleChange((title) => {
+      // Programs that emit an OSC terminal title can identify themselves in the tab.
+      // Empty titles are ignored so a program cannot erase the durable tab identity.
+      const cleaned = title.trim();
+      if (cleaned) this.onTitleChange?.(cleaned);
     });
 
     this.unsubscribeTheme = themeStore.subscribeThemeChanges((theme) => {

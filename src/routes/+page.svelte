@@ -224,6 +224,14 @@
       const idx = tabs.findIndex((t) => t.id === id);
       if (idx !== -1) {
         tabs[idx].status = newStatus;
+        if (newStatus === "stopped") tabs[idx].title = tabTitle;
+      }
+      if (newStatus === "stopped") void persistTabsState();
+    }, (dynamicTitle) => {
+      const idx = tabs.findIndex((t) => t.id === id);
+      if (idx !== -1) {
+        tabs[idx].title = dynamicTitle;
+        void persistTabsState();
       }
     });
 
@@ -256,8 +264,8 @@
       await createTab();
       return;
     }
-    const n = tabsForWorktree(tabs, ctx.path).length;
-    const title = n === 0 ? `wt:${ctx.name}` : `wt:${ctx.name} ${n + 1}`;
+    const n = tabs.length;
+    const title = `Terminal ${n + 1}`;
     await createTab(ctx.path, title, ctx.name, ctx.projectName);
   }
 
@@ -277,7 +285,8 @@
       selectTab(existing.id);
       return;
     }
-    await createTab(cwd, title, worktreeName, projectName);
+    const terminalNumber = tabs.length + 1;
+    await createTab(cwd, `Terminal ${terminalNumber}`, worktreeName, projectName);
   }
 
   /** Sidebar terminal row: selects its project and worktree, then activates the tab. */

@@ -183,6 +183,10 @@ This project is developed asynchronously and collaboratively across human develo
 
 Trunks has no versioned releases yet, so entries are grouped by date (newest first).
 
+### 2026-11-26
+
+- **Generic terminal tab titles.** New terminals use `Terminal N` instead of the worktree branch name. Programs that emit an OSC terminal title can update their tab title while running.
+
 ### 2026-11-25
 
 - **Dragon Ball color themes.** Added optional accent color themes inspired by Dragon Ball characters: Trunks (purple, default), Goku (red), Vegeta (blue), Bulma (light blue), and Piccolo (green). Themes can be selected from an Appearance dropdown in Settings (`SettingsModal`), persist in `localStorage` (`trunks.theme`), apply instantly on startup with zero flash of unstyled color (FOUC), and dynamically update UI accent elements and live xterm.js terminal sessions in real time.
