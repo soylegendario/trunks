@@ -4,6 +4,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  sanitizeBranchForPath,
+  suggestedWorktreePath,
+  worktreePathInContainer,
+  worktreesBrowseStart,
   tabIdsForRemovedPaths,
   hydrateProjects,
   toPersistedProjects,
@@ -230,5 +234,36 @@ describe("pruneCollapsedWorktrees", () => {
   });
   it("drops everything when no path is live", () => {
     assert.deepEqual(pruneCollapsedWorktrees(["/a", "/b"], []), []);
+  });
+});
+
+describe("worktree path helpers", () => {
+  it("sanitizes branch names into a single safe folder name", () => {
+    assert.equal(sanitizeBranchForPath("feat/x y"), "feat-x_y");
+  });
+
+  it("suggests <project>/.worktrees/<branch>", () => {
+    assert.equal(suggestedWorktreePath("/Users/me/repo", "feat/x y"), "/Users/me/repo/.worktrees/feat-x_y");
+  });
+
+  it("ignores a trailing separator on the project path", () => {
+    assert.equal(suggestedWorktreePath("/Users/me/repo/", "feat/x"), "/Users/me/repo/.worktrees/feat-x");
+  });
+
+  it("keeps Windows separators", () => {
+    assert.equal(suggestedWorktreePath("C:\\work\\repo", "feat/x"), "C:\\work\\repo\\.worktrees\\feat-x");
+  });
+
+  it("returns an empty suggestion for a blank branch", () => {
+    assert.equal(suggestedWorktreePath("/r", "  "), "");
+    assert.equal(worktreePathInContainer("/c", ""), "");
+  });
+
+  it("joins a picked container with the sanitized branch", () => {
+    assert.equal(worktreePathInContainer("/tmp/c/", "feat/ñ"), "/tmp/c/feat-_");
+  });
+
+  it("starts browsing at <project>/.worktrees", () => {
+    assert.equal(worktreesBrowseStart("/r"), "/r/.worktrees");
   });
 });
