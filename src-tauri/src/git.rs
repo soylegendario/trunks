@@ -819,18 +819,23 @@ async fn ensure_worktrees_excluded(repo: &Path) -> Result<(), String> {
     let raw = PathBuf::from(stdout_text(out, "git rev-parse --git-path")?.trim());
     let file = if raw.is_absolute() { raw } else { repo.join(raw) };
 
-    let existing = std::fs::read_to_string(&file).unwrap_or_default();
-    if exclude_content_has_worktrees(&existing) {
+    // Work on raw bytes: the file may hold non-UTF-8 rules, and only a missing file counts as empty.
+    let existing = match std::fs::read(&file) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(format!("read {file:?}: {e}")),
+    };
+    if exclude_content_has_worktrees(&String::from_utf8_lossy(&existing)) {
         return Ok(());
     }
     if let Some(parent) = file.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
     }
     let mut updated = existing;
-    if !updated.is_empty() && !updated.ends_with('\n') {
-        updated.push('\n');
+    if !updated.is_empty() && !updated.ends_with(b"\n") {
+        updated.push(b'\n');
     }
-    updated.push_str(".worktrees/\n");
+    updated.extend_from_slice(b".worktrees/\n");
     std::fs::write(&file, updated).map_err(|e| format!("write {file:?}: {e}"))
 }
 
@@ -1770,6 +1775,21 @@ locked
             .unwrap();
 
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "foo\n.worktrees/\n");
+    }
+
+    #[tokio::test]
+    async fn exclude_with_non_utf8_content_is_not_overwritten() {
+        let tmp = TempDir::new("wt-latin1");
+        let repo = init_repo(&tmp, "repo");
+        let file = exclude_file(&repo);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, b"# caf\xe9\nfoo\n").unwrap();
+
+        git_create_worktree(s(&repo), s(&repo.join(".worktrees/x")), "feat/x".into(), true)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&file).unwrap(), b"# caf\xe9\nfoo\n.worktrees/\n");
     }
 
     #[tokio::test]

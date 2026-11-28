@@ -23,6 +23,8 @@
   let selectedBranch = $state("");
   let newBranchName = $state("");
   let customPath = $state("");
+  // Folder chosen with Browse; the destination follows the branch name instead of going stale.
+  let pickedContainer = $state<string | null>(null);
   let openTerminalChecked = $state(true);
 
   let branches = $state<GitBranchInfo[]>([]);
@@ -36,8 +38,11 @@
   );
 
   // Default destination: <project>/.worktrees/<branch>
-  let suggestedPath = $derived(
+  let defaultPath = $derived(
     project ? suggestedWorktreePath(project.path, effectiveBranch) : ""
+  );
+  let suggestedPath = $derived(
+    pickedContainer ? worktreePathInContainer(pickedContainer, effectiveBranch) : defaultPath
   );
 
   // Track checked-out branches
@@ -56,6 +61,7 @@
       errorMessage = null;
       newBranchName = "";
       customPath = "";
+      pickedContainer = null;
       branchMode = "new";
       loadBranches();
     }
@@ -92,9 +98,16 @@
       return;
     }
     const start = worktreesBrowseStart(project.path);
-    const picked = await pickDirectory((await checkPathExists(start)) ? start : project.path);
+    let startDir = project.path;
+    try {
+      if (await checkPathExists(start)) startDir = start;
+    } catch {
+      // fall back to the project root
+    }
+    const picked = await pickDirectory(startDir);
     if (picked) {
-      customPath = worktreePathInContainer(picked, effectiveBranch);
+      pickedContainer = picked;
+      customPath = "";
       errorMessage = null;
     }
   }
@@ -242,7 +255,7 @@
           </div>
           {#if !customPath.trim() && suggestedPath}
             <span class="path-preview">
-              Suggested: <code>{suggestedPath}</code>
+              {pickedContainer ? "Selected" : "Suggested"}: <code>{suggestedPath}</code>
             </span>
           {/if}
         </div>
