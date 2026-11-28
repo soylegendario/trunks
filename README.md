@@ -185,7 +185,7 @@ Trunks has no versioned releases yet, so entries are grouped by date (newest fir
 
 ### 2026-11-28
 
-- **Folder picker and `.worktrees/` default.** Add Project and Create Worktree have a "Browse…" button that opens the native folder picker. New worktrees are proposed at `<project>/.worktrees/<branch>`, and Trunks adds `.worktrees/` to the repository's local `.git/info/exclude` so it does not show up in `git status`.
+- **Folder picker and `.worktrees/` default.** Add Project and Create Worktree have a folder-icon button (tooltip "Browse folders") that opens the native folder picker. New worktrees are proposed at `<project>/.worktrees/<branch>`, and Trunks adds `.worktrees/` to the repository's local `.git/info/exclude` so it does not show up in `git status`.
 
 ### 2026-11-26
 
