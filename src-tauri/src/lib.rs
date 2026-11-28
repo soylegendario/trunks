@@ -24,6 +24,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(PtyManager::new())
         .setup(|app| {
             let db_path = get_default_db_path(app.handle());

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { projectStore } from "$lib/projects.svelte";
+  import { pickDirectory } from "$lib/dialog";
 
   let { isOpen = $bindable(false), onProjectAdded }: {
     isOpen: boolean;
@@ -20,6 +21,14 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       handleClose();
+    }
+  }
+
+  async function handleBrowse() {
+    const picked = await pickDirectory(pathInput.trim() || undefined);
+    if (picked) {
+      pathInput = picked;
+      errorMessage = null;
     }
   }
 
@@ -65,14 +74,26 @@
 
         <div class="form-group">
           <label for="repo-path">Project Path</label>
-          <input
-            id="repo-path"
-            type="text"
-            placeholder="/Users/username/workspace/my-repo"
-            bind:value={pathInput}
-            onkeydown={(e) => e.key === "Enter" && handleAdd()}
-            disabled={isLoading}
-          />
+          <div class="path-row">
+            <input
+              id="repo-path"
+              type="text"
+              placeholder="/Users/username/workspace/my-repo"
+              bind:value={pathInput}
+              onkeydown={(e) => e.key === "Enter" && handleAdd()}
+              disabled={isLoading}
+            />
+            <button
+              type="button"
+              class="btn secondary icon-btn"
+              onclick={handleBrowse}
+              disabled={isLoading}
+              title="Browse folders"
+              aria-label="Browse folders"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+            </button>
+          </div>
         </div>
 
         {#if errorMessage}
@@ -180,6 +201,23 @@
     font-size: 12px;
     font-weight: 500;
     color: #cdd6f4;
+  }
+
+  .path-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 10px;
+  }
+
+  .path-row input {
+    flex: 1;
+    min-width: 0;
   }
 
   .form-group input {

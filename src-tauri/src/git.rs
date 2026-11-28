@@ -780,6 +780,65 @@ fn removal_args(path: &str, force: bool) -> Vec<&str> {
     args
 }
 
+/// True when `dest` (which may not exist yet) lies inside `<repo>/.worktrees/`.
+fn is_under_worktrees_dir(repo: &Path, dest: &Path) -> bool {
+    // Canonicalize the nearest existing ancestor and re-append the rest, since `dest` is new.
+    let mut existing = dest.to_path_buf();
+    let mut rest = Vec::new();
+    while !existing.exists() {
+        match (existing.file_name().map(|n| n.to_owned()), existing.parent()) {
+            (Some(name), Some(parent)) => {
+                rest.push(name);
+                existing = parent.to_path_buf();
+            }
+            _ => break,
+        }
+    }
+    let mut resolved = canonical_or_raw(&existing);
+    resolved.extend(rest.into_iter().rev());
+    resolved.starts_with(canonical_or_raw(repo).join(".worktrees"))
+}
+
+/// True when an `info/exclude` body already ignores the `.worktrees` directory.
+fn exclude_content_has_worktrees(content: &str) -> bool {
+    content
+        .lines()
+        .map(str::trim)
+        .any(|l| matches!(l, ".worktrees" | ".worktrees/" | "/.worktrees" | "/.worktrees/"))
+}
+
+/// Adds `.worktrees/` to the repository's local `info/exclude` (never the tracked `.gitignore`).
+/// The path comes from git because `.git` may be a file (linked worktrees, submodules).
+async fn ensure_worktrees_excluded(repo: &Path) -> Result<(), String> {
+    let out = run_git(
+        repo,
+        &["rev-parse", "--git-path", "info/exclude"],
+        "git rev-parse --git-path",
+    )
+    .await?;
+    let raw = PathBuf::from(stdout_text(out, "git rev-parse --git-path")?.trim());
+    let file = if raw.is_absolute() { raw } else { repo.join(raw) };
+
+    // Work on raw bytes: the file may hold non-UTF-8 rules, and only a missing file counts as empty.
+    let existing = match std::fs::read(&file) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(format!("read {file:?}: {e}")),
+    };
+    if exclude_content_has_worktrees(&String::from_utf8_lossy(&existing)) {
+        return Ok(());
+    }
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
+    }
+    let mut updated = existing;
+    if !updated.is_empty() && !updated.ends_with(b"\n") {
+        updated.push(b'\n');
+    }
+    updated.extend_from_slice(b".worktrees/\n");
+    std::fs::write(&file, updated).map_err(|e| format!("write {file:?}: {e}"))
+}
+
 #[tauri::command]
 pub async fn git_create_worktree(
     repo_path: String,
@@ -794,6 +853,11 @@ pub async fn git_create_worktree(
     }
     if !Path::new(&worktree_path).is_absolute() {
         return Err(format!("worktree path must be absolute: '{worktree_path}'"));
+    }
+    if is_under_worktrees_dir(Path::new(&repo_path), Path::new(&worktree_path)) {
+        if let Err(e) = ensure_worktrees_excluded(Path::new(&repo_path)).await {
+            eprintln!("could not add .worktrees/ to info/exclude: {e}");
+        }
     }
     let args: Vec<&str> = if new_branch {
         vec!["worktree", "add", "-b", &branch, "--", &worktree_path]
@@ -1611,6 +1675,136 @@ locked
 
     fn s(p: &Path) -> String {
         p.to_string_lossy().into_owned()
+    }
+
+    // ---- .worktrees/ exclusion ----
+
+    #[test]
+    fn exclude_content_detects_worktrees_entry() {
+        assert!(!exclude_content_has_worktrees(""));
+        assert!(exclude_content_has_worktrees(".worktrees/\n"));
+        assert!(exclude_content_has_worktrees("/.worktrees"));
+        assert!(exclude_content_has_worktrees("  .worktrees/  "));
+        assert!(!exclude_content_has_worktrees("foo\n.worktrees-old/\n"));
+    }
+
+    #[test]
+    fn is_under_worktrees_dir_matches_only_the_dot_worktrees_subtree() {
+        let tmp = TempDir::new("under-wt");
+        let repo = init_repo(&tmp, "repo");
+        assert!(is_under_worktrees_dir(&repo, &repo.join(".worktrees/feat")));
+        assert!(!is_under_worktrees_dir(&repo, &tmp.0.join("repo-feat")));
+        assert!(!is_under_worktrees_dir(&repo, &repo.join(".worktreesX/a")));
+    }
+
+    /// Absolute path of the `info/exclude` file git uses for `repo`.
+    fn exclude_file(repo: &Path) -> PathBuf {
+        let out = sync_git_command()
+            .args(["rev-parse", "--git-path", "info/exclude"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        let p = PathBuf::from(String::from_utf8(out.stdout).unwrap().trim());
+        if p.is_absolute() { p } else { repo.join(p) }
+    }
+
+    fn porcelain_status(repo: &Path) -> String {
+        let out = sync_git_command()
+            .args(["status", "--porcelain"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    fn worktrees_entry_count(repo: &Path) -> usize {
+        std::fs::read_to_string(exclude_file(repo))
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| l.trim() == ".worktrees/")
+            .count()
+    }
+
+    #[tokio::test]
+    async fn create_worktree_under_dot_worktrees_keeps_status_clean() {
+        let tmp = TempDir::new("wt-clean");
+        let repo = init_repo(&tmp, "repo");
+        let dest = repo.join(".worktrees/feat-a");
+
+        git_create_worktree(s(&repo), s(&dest), "feat/a".into(), true).await.unwrap();
+
+        assert_eq!(porcelain_status(&repo), "");
+        assert_eq!(worktrees_entry_count(&repo), 1);
+    }
+
+    #[tokio::test]
+    async fn create_second_worktree_does_not_duplicate_exclude_entry() {
+        let tmp = TempDir::new("wt-dup");
+        let repo = init_repo(&tmp, "repo");
+        git_create_worktree(s(&repo), s(&repo.join(".worktrees/a")), "feat/a".into(), true)
+            .await
+            .unwrap();
+        git_create_worktree(s(&repo), s(&repo.join(".worktrees/b")), "feat/b".into(), true)
+            .await
+            .unwrap();
+
+        assert_eq!(worktrees_entry_count(&repo), 1);
+    }
+
+    #[tokio::test]
+    async fn create_worktree_outside_dot_worktrees_leaves_exclude_untouched() {
+        let tmp = TempDir::new("wt-outside");
+        let repo = init_repo(&tmp, "repo");
+        let dest = tmp.0.join("elsewhere");
+
+        git_create_worktree(s(&repo), s(&dest), "feat/o".into(), true).await.unwrap();
+
+        assert_eq!(worktrees_entry_count(&repo), 0);
+    }
+
+    #[tokio::test]
+    async fn exclude_without_trailing_newline_is_preserved() {
+        let tmp = TempDir::new("wt-nonl");
+        let repo = init_repo(&tmp, "repo");
+        let file = exclude_file(&repo);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "foo").unwrap();
+
+        git_create_worktree(s(&repo), s(&repo.join(".worktrees/x")), "feat/x".into(), true)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "foo\n.worktrees/\n");
+    }
+
+    #[tokio::test]
+    async fn exclude_with_non_utf8_content_is_not_overwritten() {
+        let tmp = TempDir::new("wt-latin1");
+        let repo = init_repo(&tmp, "repo");
+        let file = exclude_file(&repo);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, b"# caf\xe9\nfoo\n").unwrap();
+
+        git_create_worktree(s(&repo), s(&repo.join(".worktrees/x")), "feat/x".into(), true)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&file).unwrap(), b"# caf\xe9\nfoo\n.worktrees/\n");
+    }
+
+    #[tokio::test]
+    async fn exclude_works_when_project_is_a_linked_worktree() {
+        let tmp = TempDir::new("wt-linked");
+        let repo = init_repo(&tmp, "repo");
+        let linked = tmp.0.join("linked");
+        git_create_worktree(s(&repo), s(&linked), "feat/l".into(), true).await.unwrap();
+        let linked = linked.canonicalize().unwrap();
+
+        git_create_worktree(s(&linked), s(&linked.join(".worktrees/x")), "feat/lx".into(), true)
+            .await
+            .unwrap();
+
+        assert_eq!(porcelain_status(&linked), "");
     }
 
     #[tokio::test]

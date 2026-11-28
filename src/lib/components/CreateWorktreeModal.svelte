@@ -1,6 +1,13 @@
 <script lang="ts">
   import { gitListBranches, type GitBranchInfo, type GitWorktreeInfo } from "$lib/git";
   import { projectStore, type ProjectState } from "$lib/projects.svelte";
+  import { pickDirectory } from "$lib/dialog";
+  import { checkPathExists } from "$lib/storage";
+  import {
+    suggestedWorktreePath,
+    worktreePathInContainer,
+    worktreesBrowseStart,
+  } from "$lib/project-logic";
 
   let {
     isOpen = $bindable(false),
@@ -16,6 +23,8 @@
   let selectedBranch = $state("");
   let newBranchName = $state("");
   let customPath = $state("");
+  // Folder chosen with Browse; the destination follows the branch name instead of going stale.
+  let pickedContainer = $state<string | null>(null);
   let openTerminalChecked = $state(true);
 
   let branches = $state<GitBranchInfo[]>([]);
@@ -28,13 +37,13 @@
     branchMode === "new" ? newBranchName.trim() : selectedBranch.trim()
   );
 
-  // Auto-generate suggested path based on project path and branch name
-  let suggestedPath = $derived.by(() => {
-    if (!project || !effectiveBranch) return "";
-    const sanitizedBranch = effectiveBranch.replace(/[\\/]/g, "-").replace(/[^a-zA-Z0-9._-]/g, "_");
-    const parentDir = project.path.replace(/[\\/][^\\/]+$/, "");
-    return `${parentDir}/${project.name}-${sanitizedBranch}`;
-  });
+  // Default destination: <project>/.worktrees/<branch>
+  let defaultPath = $derived(
+    project ? suggestedWorktreePath(project.path, effectiveBranch) : ""
+  );
+  let suggestedPath = $derived(
+    pickedContainer ? worktreePathInContainer(pickedContainer, effectiveBranch) : defaultPath
+  );
 
   // Track checked-out branches
   let checkedOutBranches = $derived.by(() => {
@@ -52,6 +61,7 @@
       errorMessage = null;
       newBranchName = "";
       customPath = "";
+      pickedContainer = null;
       branchMode = "new";
       loadBranches();
     }
@@ -78,6 +88,27 @@
       branches = [];
     } finally {
       isLoadingBranches = false;
+    }
+  }
+
+  async function handleBrowse() {
+    if (!project) return;
+    if (!effectiveBranch) {
+      errorMessage = "Enter a branch name first.";
+      return;
+    }
+    const start = worktreesBrowseStart(project.path);
+    let startDir = project.path;
+    try {
+      if (await checkPathExists(start)) startDir = start;
+    } catch {
+      // fall back to the project root
+    }
+    const picked = await pickDirectory(startDir);
+    if (picked) {
+      pickedContainer = picked;
+      customPath = "";
+      errorMessage = null;
     }
   }
 
@@ -210,16 +241,28 @@
             Destination Directory
             <span class="sub-label">(Absolute path on disk)</span>
           </label>
-          <input
-            id="worktree-path-input"
-            type="text"
-            placeholder={suggestedPath || "/path/to/worktree"}
-            bind:value={customPath}
-            disabled={isSubmitting}
-          />
+          <div class="path-row">
+            <input
+              id="worktree-path-input"
+              type="text"
+              placeholder={suggestedPath || "<project>/.worktrees/<branch>"}
+              bind:value={customPath}
+              disabled={isSubmitting}
+            />
+            <button
+              type="button"
+              class="btn secondary icon-btn"
+              onclick={handleBrowse}
+              disabled={isSubmitting}
+              title="Browse folders"
+              aria-label="Browse folders"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+            </button>
+          </div>
           {#if !customPath.trim() && suggestedPath}
             <span class="path-preview">
-              Suggested: <code>{suggestedPath}</code>
+              {pickedContainer ? "Selected" : "Suggested"}: <code>{suggestedPath}</code>
             </span>
           {/if}
         </div>
@@ -405,6 +448,23 @@
     font-size: 11px;
     color: #a6adc8;
     font-weight: normal;
+  }
+
+  .path-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 10px;
+  }
+
+  .path-row input {
+    flex: 1;
+    min-width: 0;
   }
 
   .form-group input,

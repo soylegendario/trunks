@@ -139,3 +139,33 @@ export function pruneCollapsedWorktrees(collapsed: string[], livePaths: string[]
   const live = new Set(livePaths);
   return collapsed.filter((p) => live.has(p));
 }
+
+// ---- Worktree destination paths ----
+
+/** Folder-safe version of a branch name: separators become `-`, anything unusual becomes `_`. */
+export function sanitizeBranchForPath(branch: string): string {
+  return branch.replace(/[\\/]/g, "-").replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function joinPath(base: string, ...parts: string[]): string {
+  const sep = base.includes("\\") && !base.includes("/") ? "\\" : "/";
+  const trimmed = base.replace(/[\\/]+$/, "");
+  return [trimmed, ...parts].join(sep);
+}
+
+/** Default destination for a new worktree: `<project>/.worktrees/<sanitized-branch>`. */
+export function suggestedWorktreePath(projectPath: string, branch: string): string {
+  if (!branch.trim()) return "";
+  return joinPath(projectPath, ".worktrees", sanitizeBranchForPath(branch.trim()));
+}
+
+/** Destination built from a folder the user picked: `<container>/<sanitized-branch>`. */
+export function worktreePathInContainer(containerPath: string, branch: string): string {
+  if (!branch.trim()) return "";
+  return joinPath(containerPath, sanitizeBranchForPath(branch.trim()));
+}
+
+/** Where the folder picker opens when choosing a worktree location. */
+export function worktreesBrowseStart(projectPath: string): string {
+  return joinPath(projectPath, ".worktrees");
+}
