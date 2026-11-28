@@ -1,5 +1,6 @@
 <script lang="ts">
   import { projectStore } from "$lib/projects.svelte";
+  import { pickDirectory } from "$lib/dialog";
 
   let { isOpen = $bindable(false), onProjectAdded }: {
     isOpen: boolean;
@@ -20,6 +21,14 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       handleClose();
+    }
+  }
+
+  async function handleBrowse() {
+    const picked = await pickDirectory(pathInput.trim() || undefined);
+    if (picked) {
+      pathInput = picked;
+      errorMessage = null;
     }
   }
 
@@ -65,14 +74,19 @@
 
         <div class="form-group">
           <label for="repo-path">Project Path</label>
-          <input
-            id="repo-path"
-            type="text"
-            placeholder="/Users/username/workspace/my-repo"
-            bind:value={pathInput}
-            onkeydown={(e) => e.key === "Enter" && handleAdd()}
-            disabled={isLoading}
-          />
+          <div class="path-row">
+            <input
+              id="repo-path"
+              type="text"
+              placeholder="/Users/username/workspace/my-repo"
+              bind:value={pathInput}
+              onkeydown={(e) => e.key === "Enter" && handleAdd()}
+              disabled={isLoading}
+            />
+            <button type="button" class="btn secondary" onclick={handleBrowse} disabled={isLoading}>
+              Browse…
+            </button>
+          </div>
         </div>
 
         {#if errorMessage}
@@ -180,6 +194,16 @@
     font-size: 12px;
     font-weight: 500;
     color: #cdd6f4;
+  }
+
+  .path-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .path-row input {
+    flex: 1;
+    min-width: 0;
   }
 
   .form-group input {

@@ -1,6 +1,13 @@
 <script lang="ts">
   import { gitListBranches, type GitBranchInfo, type GitWorktreeInfo } from "$lib/git";
   import { projectStore, type ProjectState } from "$lib/projects.svelte";
+  import { pickDirectory } from "$lib/dialog";
+  import { checkPathExists } from "$lib/storage";
+  import {
+    suggestedWorktreePath,
+    worktreePathInContainer,
+    worktreesBrowseStart,
+  } from "$lib/project-logic";
 
   let {
     isOpen = $bindable(false),
@@ -28,13 +35,10 @@
     branchMode === "new" ? newBranchName.trim() : selectedBranch.trim()
   );
 
-  // Auto-generate suggested path based on project path and branch name
-  let suggestedPath = $derived.by(() => {
-    if (!project || !effectiveBranch) return "";
-    const sanitizedBranch = effectiveBranch.replace(/[\\/]/g, "-").replace(/[^a-zA-Z0-9._-]/g, "_");
-    const parentDir = project.path.replace(/[\\/][^\\/]+$/, "");
-    return `${parentDir}/${project.name}-${sanitizedBranch}`;
-  });
+  // Default destination: <project>/.worktrees/<branch>
+  let suggestedPath = $derived(
+    project ? suggestedWorktreePath(project.path, effectiveBranch) : ""
+  );
 
   // Track checked-out branches
   let checkedOutBranches = $derived.by(() => {
@@ -78,6 +82,20 @@
       branches = [];
     } finally {
       isLoadingBranches = false;
+    }
+  }
+
+  async function handleBrowse() {
+    if (!project) return;
+    if (!effectiveBranch) {
+      errorMessage = "Enter a branch name first.";
+      return;
+    }
+    const start = worktreesBrowseStart(project.path);
+    const picked = await pickDirectory((await checkPathExists(start)) ? start : project.path);
+    if (picked) {
+      customPath = worktreePathInContainer(picked, effectiveBranch);
+      errorMessage = null;
     }
   }
 
@@ -210,13 +228,18 @@
             Destination Directory
             <span class="sub-label">(Absolute path on disk)</span>
           </label>
-          <input
-            id="worktree-path-input"
-            type="text"
-            placeholder={suggestedPath || "/path/to/worktree"}
-            bind:value={customPath}
-            disabled={isSubmitting}
-          />
+          <div class="path-row">
+            <input
+              id="worktree-path-input"
+              type="text"
+              placeholder={suggestedPath || "<project>/.worktrees/<branch>"}
+              bind:value={customPath}
+              disabled={isSubmitting}
+            />
+            <button type="button" class="btn secondary" onclick={handleBrowse} disabled={isSubmitting}>
+              Browse…
+            </button>
+          </div>
           {#if !customPath.trim() && suggestedPath}
             <span class="path-preview">
               Suggested: <code>{suggestedPath}</code>
@@ -405,6 +428,16 @@
     font-size: 11px;
     color: #a6adc8;
     font-weight: normal;
+  }
+
+  .path-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .path-row input {
+    flex: 1;
+    min-width: 0;
   }
 
   .form-group input,
